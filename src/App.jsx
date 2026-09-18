@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { initEngine, evaluate } from './lib/engine.js';
 import { parseGame, scoreToCp, fmtEval, classify, detectSacrifice, TAG_LABEL } from './lib/analysis.js';
 import Chessboard from './components/Chessboard.jsx';
@@ -6,6 +6,29 @@ import Chessboard from './components/Chessboard.jsx';
 const ROW_CLASS = {
   brilliant: 'flagged', best: '', good: '', inaccuracy: 'bad', mistake: 'bad', blunder: 'worse'
 };
+
+function movePairs(rows) {
+  const pairs = [];
+  for (const r of rows) {
+    const i = r.moveNo - 1;
+    if (!pairs[i]) pairs[i] = { moveNo: r.moveNo };
+    pairs[i][r.moverIsWhite ? 'white' : 'black'] = r;
+  }
+  return pairs;
+}
+
+function MoveCell({ row, active, onSelect }) {
+  if (!row) return <div className="move-cell empty" />;
+  return (
+    <div
+      className={'move-cell ' + ROW_CLASS[row.cls] + (active ? ' active' : '')}
+      title={`${row.evalBeforeDisplay} → ${row.evalAfterDisplay}`}
+      onClick={() => onSelect(row.idx + 1)}
+    >
+      {row.san}<span className={'move-tag tag-' + row.cls}>{TAG_LABEL[row.cls]}</span>
+    </div>
+  );
+}
 
 const SAMPLE_PGN = `1. h3 e5 2. Nf3 Nc6 3. e4 Bc5 4. Bc4 d6 5. Bd5 Nd4 6. Nxd4 exd4 7. d3 Nf6 8. Bg5
 h6 9. Bxf6 gxf6 10. Qg4 Bxg4 11. hxg4 c6 12. Bc4 Qc7 13. O-O O-O-O 14. Nd2 d5
@@ -34,6 +57,19 @@ export default function App() {
   const stopRef = useRef(false);
   const analysisRef = useRef(null);
   const movesRef = useRef([]);
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (positions.length === 0) return;
+      if (['TEXTAREA', 'INPUT', 'SELECT'].includes(e.target.tagName)) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); setBoardIndex(i => Math.max(0, i - 1)); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); setBoardIndex(i => Math.min(positions.length - 1, i + 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setBoardIndex(0); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); setBoardIndex(positions.length - 1); }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [positions.length]);
 
   async function runAnalysis() {
     stopRef.current = false;
@@ -246,15 +282,11 @@ export default function App() {
             <div className="panel">
               <h2>Move by move</h2>
               <div className="movelist">
-                {rows.map(r => (
-                  <div
-                    className={'move-row ' + ROW_CLASS[r.cls] + (boardIndex === r.idx + 1 ? ' active' : '')}
-                    key={r.idx}
-                    onClick={() => setBoardIndex(r.idx + 1)}
-                  >
-                    <div className="move-num mono">{r.moveNo}{r.moverIsWhite ? '.' : '...'}</div>
-                    <div className="move-san">{r.san}<span className={'move-tag tag-' + r.cls}>{TAG_LABEL[r.cls]}</span></div>
-                    <div className="move-eval mono">{r.evalAfterDisplay}</div>
+                {movePairs(rows).map(p => (
+                  <div className="move-pair" key={p.moveNo}>
+                    <div className="move-num mono">{p.moveNo}</div>
+                    <MoveCell row={p.white} active={boardIndex === (p.white?.idx ?? -2) + 1} onSelect={setBoardIndex} />
+                    <MoveCell row={p.black} active={boardIndex === (p.black?.idx ?? -2) + 1} onSelect={setBoardIndex} />
                   </div>
                 ))}
               </div>
