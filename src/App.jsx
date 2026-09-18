@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Chess } from 'chess.js';
 import { initEngine, evaluate } from './lib/engine.js';
 import { parseGame, scoreToCp, fmtEval, classify, detectSacrifice, whiteEvalOf, parseUciMove, TAG_LABEL } from './lib/analysis.js';
 import Chessboard from './components/Chessboard.jsx';
@@ -55,11 +54,8 @@ export default function App() {
   const [positions, setPositions] = useState([]);
   const [boardIndex, setBoardIndex] = useState(0);
   const [currentEval, setCurrentEval] = useState({ cp: 0, mate: null });
-  const [guessMode, setGuessMode] = useState(false);
-  const [selectedSquare, setSelectedSquare] = useState(null);
-  const [legalTargets, setLegalTargets] = useState([]);
-  const [guessResult, setGuessResult] = useState(null);
-  const [guessing, setGuessing] = useState(false);
+  const [showArrow, setShowArrow] = useState(false);
+  const [flipped, setFlipped] = useState(false);
 
   const engineRef = useRef(null);
   const stopRef = useRef(false);
@@ -73,82 +69,13 @@ export default function App() {
   }, [boardIndex]);
 
   useEffect(() => {
-    setSelectedSquare(null);
-    setLegalTargets([]);
-    setGuessResult(null);
-  }, [boardIndex]);
-
-  function handleSquareClick(square) {
-    if (guessing) return;
-    const chess = new Chess(positions[boardIndex]);
-    const sideToMove = boardIndex % 2 === 0 ? 'w' : 'b';
-
-    if (selectedSquare && legalTargets.includes(square)) {
-      submitGuess(selectedSquare, square);
-      return;
-    }
-
-    const piece = chess.get(square);
-    if (piece && piece.color === sideToMove) {
-      setSelectedSquare(square);
-      setLegalTargets(chess.moves({ square, verbose: true }).map(m => m.to));
-    } else {
-      setSelectedSquare(null);
-      setLegalTargets([]);
-    }
-  }
-
-  async function submitGuess(from, to) {
-    setSelectedSquare(null);
-    setLegalTargets([]);
-
-    const chess = new Chess(positions[boardIndex]);
-    const played = chess.move({ from, to, promotion: 'q' });
-    if (!played) return;
-
-    const evalHere = evalsRef.current[boardIndex];
-    const bestUci = evalHere && evalHere.pv && evalHere.pv[0];
-    const bestChess = new Chess(positions[boardIndex]);
-    const bestMove = bestUci ? bestChess.move(parseUciMove(bestUci)) : null;
-    const matched = bestMove && bestMove.from === played.from && bestMove.to === played.to
-      && (bestMove.promotion || '') === (played.promotion || '');
-
-    if (matched) {
-      setGuessResult({ matched: true, cls: 'best', userSan: played.san });
-      return;
-    }
-
-    setGuessing(true);
-    try {
-      const responseEval = await evaluate(engineRef.current, chess.fen(), depth);
-      const moverIsWhite = boardIndex % 2 === 0;
-      const evalBefore = scoreToCp(evalHere);
-      const evalAfterForMover = -scoreToCp(responseEval);
-      const cpLoss = Math.max(0, evalBefore - evalAfterForMover);
-      const replyPv = responseEval.pv && responseEval.pv[0];
-      const isSac = detectSacrifice({
-        positions: [positions[boardIndex], chess.fen()], i: 0, moverIsWhite, evalBefore, evalAfterForMover, replyPv
-      });
-      setGuessResult({
-        matched: false,
-        cls: classify(cpLoss, isSac),
-        userSan: played.san,
-        bestSan: bestMove ? bestMove.san : '—',
-        evalAfterDisplay: fmtEval(responseEval, !moverIsWhite)
-      });
-    } finally {
-      setGuessing(false);
-    }
-  }
-
-  useEffect(() => {
     function onKeyDown(e) {
       if (positions.length === 0) return;
       if (['TEXTAREA', 'INPUT', 'SELECT'].includes(e.target.tagName)) return;
       if (e.key === 'ArrowLeft') { e.preventDefault(); setBoardIndex(i => Math.max(0, i - 1)); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); setBoardIndex(i => Math.min(positions.length - 1, i + 1)); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); setBoardIndex(0); }
-      else if (e.key === 'ArrowDown') { e.preventDefault(); setBoardIndex(positions.length - 1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setBoardIndex(positions.length - 1); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); setBoardIndex(0); }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -162,8 +89,6 @@ export default function App() {
     setTurningPoint(null);
     setAskAnswer('');
     setProgress(0);
-    setGuessMode(false);
-    setGuessResult(null);
 
     let game;
     try {
@@ -292,6 +217,10 @@ export default function App() {
     a.click();
   }
 
+  const evalHere = evalsRef.current[boardIndex];
+  const bestUci = evalHere && evalHere.pv && evalHere.pv[0];
+  const arrow = showArrow && bestUci ? parseUciMove(bestUci) : null;
+
   return (
     <div className="wrap">
       <header className="hero">
@@ -337,9 +266,6 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <div className="note">
-                A move is flagged <strong>Brilliant</strong> when it's the engine's best (or near-best) choice, it hands over material the engine's own main line lets the opponent take, the position wasn't already decisively winning beforehand, and the sacrifice doesn't leave the mover worse off — an approximation of chess.com's stated criteria, computed from a real (if modest-strength) engine.
-              </div>
             </div>
           )}
         </div>
@@ -348,45 +274,23 @@ export default function App() {
           {positions.length > 0 && (
             <div className="board-panel">
               <div className="board-row">
-                <EvalBar cp={currentEval.cp} mate={currentEval.mate} />
+                <EvalBar cp={currentEval.cp} mate={currentEval.mate} flipped={flipped} />
                 <Chessboard
                   fen={positions[boardIndex]}
                   lastMove={movesRef.current[boardIndex - 1]}
-                  selected={guessMode ? selectedSquare : null}
-                  legalTargets={guessMode ? legalTargets : []}
-                  onSquareClick={guessMode ? handleSquareClick : undefined}
+                  flipped={flipped}
+                  arrow={arrow}
                 />
               </div>
               <div className="board-nav">
                 <button className="small ghost" onClick={() => setBoardIndex(i => Math.max(0, i - 1))} disabled={boardIndex === 0}>← Prev</button>
                 <span className="mono small">{boardIndex} / {positions.length - 1}</span>
                 <button className="small ghost" onClick={() => setBoardIndex(i => Math.min(positions.length - 1, i + 1))} disabled={boardIndex === positions.length - 1}>Next →</button>
-                <button
-                  className={'small' + (guessMode ? '' : ' ghost')}
-                  onClick={() => setGuessMode(g => !g)}
-                  disabled={!rows.length}
-                >
-                  {guessMode ? 'Stop guessing' : '🎯 Guess the move'}
+                <button className={'small' + (showArrow ? '' : ' ghost')} onClick={() => setShowArrow(a => !a)}>
+                  {showArrow ? 'Hide best move' : '➜ Show best move'}
                 </button>
+                <button className="small ghost" onClick={() => setFlipped(f => !f)}>⇅ Flip board</button>
               </div>
-              {guessMode && (
-                <div className="guess-panel">
-                  {guessing && <div className="guess-status mono">Checking your move…</div>}
-                  {!guessing && !guessResult && (
-                    <div className="guess-status mono">
-                      Click a {boardIndex % 2 === 0 ? 'White' : 'Black'} piece, then a square, to guess the engine's best move here.
-                    </div>
-                  )}
-                  {!guessing && guessResult && guessResult.matched && (
-                    <div className="guess-feedback flagged">✓ {guessResult.userSan} — that's the engine's top choice.</div>
-                  )}
-                  {!guessing && guessResult && !guessResult.matched && (
-                    <div className={'guess-feedback ' + ROW_CLASS[guessResult.cls]}>
-                      {guessResult.userSan} — {TAG_LABEL[guessResult.cls]} (eval {guessResult.evalAfterDisplay}). Engine's best: {guessResult.bestSan}.
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )}
 
