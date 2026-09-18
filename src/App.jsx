@@ -56,26 +56,66 @@ export default function App() {
   const [currentEval, setCurrentEval] = useState({ cp: 0, mate: null });
   const [showArrow, setShowArrow] = useState(false);
   const [flipped, setFlipped] = useState(false);
+  const [animatingMove, setAnimatingMove] = useState(null);
 
   const engineRef = useRef(null);
   const stopRef = useRef(false);
   const analysisRef = useRef(null);
   const movesRef = useRef([]);
   const evalsRef = useRef([]);
+  const boardIndexRef = useRef(0);
 
   useEffect(() => {
     const res = evalsRef.current[boardIndex];
     if (res) setCurrentEval(whiteEvalOf(res, boardIndex % 2 === 0));
   }, [boardIndex]);
 
+  // Auto-clears the sliding-piece animation once its CSS transition has finished.
+  useEffect(() => {
+    if (!animatingMove) return;
+    const t = setTimeout(() => setAnimatingMove(null), 220);
+    return () => clearTimeout(t);
+  }, [animatingMove]);
+
+  // Navigates the board. For a single-step move (the common "stepping through
+  // moves" case) this also computes the sliding-piece animation and applies it
+  // in the SAME state update as the index change, so Chessboard's very first
+  // render of the new position already carries the right animation info —
+  // computing it a tick later (e.g. in a useEffect keyed on boardIndex) is too
+  // late: the piece would already have snapped to its new square by then.
+  function goToIndex(newIndexRaw) {
+    const newIndex = Math.max(0, Math.min(positions.length - 1, newIndexRaw));
+    const prev = boardIndexRef.current;
+    boardIndexRef.current = newIndex;
+    const delta = newIndex - prev;
+
+    let anim = null;
+    if (Math.abs(delta) === 1) {
+      const forward = delta === 1;
+      const move = movesRef.current[forward ? prev : newIndex];
+      if (move) {
+        anim = { pieceFrom: forward ? move.from : move.to, pieceTo: forward ? move.to : move.from };
+        if (move.flags.includes('k') || move.flags.includes('q')) {
+          const rank = move.color === 'w' ? '1' : '8';
+          const rookFromFile = move.flags.includes('k') ? 'h' : 'a';
+          const rookToFile = move.flags.includes('k') ? 'f' : 'd';
+          anim.rookFrom = (forward ? rookFromFile : rookToFile) + rank;
+          anim.rookTo = (forward ? rookToFile : rookFromFile) + rank;
+        }
+      }
+    }
+    setAnimatingMove(anim);
+    setBoardIndex(newIndex);
+  }
+
   useEffect(() => {
     function onKeyDown(e) {
       if (positions.length === 0) return;
       if (['TEXTAREA', 'INPUT', 'SELECT'].includes(e.target.tagName)) return;
-      if (e.key === 'ArrowLeft') { e.preventDefault(); setBoardIndex(i => Math.max(0, i - 1)); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); setBoardIndex(i => Math.min(positions.length - 1, i + 1)); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); setBoardIndex(positions.length - 1); }
-      else if (e.key === 'ArrowDown') { e.preventDefault(); setBoardIndex(0); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); goToIndex(boardIndexRef.current - 1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); goToIndex(boardIndexRef.current + 1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); goToIndex(positions.length - 1); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); goToIndex(0); }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -102,6 +142,8 @@ export default function App() {
     const { positions, sanList, moves } = game;
     movesRef.current = moves;
     setPositions(positions);
+    boardIndexRef.current = 0;
+    setAnimatingMove(null);
     setBoardIndex(0);
 
     if (!engineRef.current) {
@@ -128,6 +170,8 @@ export default function App() {
     }
     setProgress(100);
     setStatus('Analysis complete.');
+    boardIndexRef.current = positions.length - 1;
+    setAnimatingMove(null);
     setBoardIndex(positions.length - 1);
 
     const outRows = [];
@@ -234,7 +278,66 @@ export default function App() {
       </header>
 
       <div className="layout">
-        <div className="sidebar">
+        <div className="board-column">
+          {positions.length > 0 ? (
+            <div className="board-panel">
+              <div className="board-row">
+                <EvalBar cp={currentEval.cp} mate={currentEval.mate} flipped={flipped} />
+                <Chessboard
+                  fen={positions[boardIndex]}
+                  lastMove={movesRef.current[boardIndex - 1]}
+                  flipped={flipped}
+                  arrow={arrow}
+                  animatingMove={animatingMove}
+                />
+              </div>
+              <div className="board-nav">
+                <button className="small ghost" onClick={() => goToIndex(boardIndex - 1)} disabled={boardIndex === 0}>← Prev</button>
+                <span className="mono small">{boardIndex} / {positions.length - 1}</span>
+                <button className="small ghost" onClick={() => goToIndex(boardIndex + 1)} disabled={boardIndex === positions.length - 1}>Next →</button>
+                <button className={'small' + (showArrow ? '' : ' ghost')} onClick={() => setShowArrow(a => !a)}>
+                  {showArrow ? 'Hide best move' : '➜ Show best move'}
+                </button>
+                <button className="small ghost" onClick={() => setFlipped(f => !f)}>⇅ Flip board</button>
+              </div>
+            </div>
+          ) : (
+            <div className="board-empty">
+              <div className="board-empty-icon">
+                {Array.from({ length: 16 }).map((_, i) => <div key={i} />)}
+              </div>
+              <p>Paste a PGN in the panel and click Analyze to bring up the board.</p>
+            </div>
+          )}
+
+          {turningPoint && (
+            <div className="turning-point">
+              <h3>Turning point — {turningPoint.moveNo}{turningPoint.moverIsWhite ? '.' : '...'}{turningPoint.san}</h3>
+              <div className="mono" style={{ fontSize: 13, color: 'var(--ink-soft)' }}>
+                {turningPoint.moverIsWhite ? 'White' : 'Black'} · eval swung from {turningPoint.evalBeforeDisplay} to {turningPoint.evalAfterDisplay} · classified as {TAG_LABEL[turningPoint.cls]}
+              </div>
+            </div>
+          )}
+
+          {rows.length > 0 && (
+            <div className="panel ask-box">
+              <h2>Ask about this game</h2>
+              <textarea
+                placeholder="e.g. Why does this move actually work? What should have been played instead?"
+                value={askText}
+                onChange={e => setAskText(e.target.value)}
+                style={{ minHeight: 60 }}
+              />
+              <div className="row">
+                <button className="small" onClick={askClaude} disabled={asking}>Ask Claude</button>
+                <button className="small ghost" onClick={downloadReport}>Download report (.md)</button>
+              </div>
+              {askAnswer && <div className="answer">{askAnswer}</div>}
+            </div>
+          )}
+        </div>
+
+        <div className="side-panel">
           <div className="panel">
             <h2>Game</h2>
             <textarea value={pgn} onChange={e => setPgn(e.target.value)} />
@@ -268,40 +371,6 @@ export default function App() {
               </div>
             </div>
           )}
-        </div>
-
-        <div className="main">
-          {positions.length > 0 && (
-            <div className="board-panel">
-              <div className="board-row">
-                <EvalBar cp={currentEval.cp} mate={currentEval.mate} flipped={flipped} />
-                <Chessboard
-                  fen={positions[boardIndex]}
-                  lastMove={movesRef.current[boardIndex - 1]}
-                  flipped={flipped}
-                  arrow={arrow}
-                />
-              </div>
-              <div className="board-nav">
-                <button className="small ghost" onClick={() => setBoardIndex(i => Math.max(0, i - 1))} disabled={boardIndex === 0}>← Prev</button>
-                <span className="mono small">{boardIndex} / {positions.length - 1}</span>
-                <button className="small ghost" onClick={() => setBoardIndex(i => Math.min(positions.length - 1, i + 1))} disabled={boardIndex === positions.length - 1}>Next →</button>
-                <button className={'small' + (showArrow ? '' : ' ghost')} onClick={() => setShowArrow(a => !a)}>
-                  {showArrow ? 'Hide best move' : '➜ Show best move'}
-                </button>
-                <button className="small ghost" onClick={() => setFlipped(f => !f)}>⇅ Flip board</button>
-              </div>
-            </div>
-          )}
-
-          {turningPoint && (
-            <div className="turning-point">
-              <h3>Turning point — {turningPoint.moveNo}{turningPoint.moverIsWhite ? '.' : '...'}{turningPoint.san}</h3>
-              <div className="mono" style={{ fontSize: 13, color: 'var(--ink-soft)' }}>
-                {turningPoint.moverIsWhite ? 'White' : 'Black'} · eval swung from {turningPoint.evalBeforeDisplay} to {turningPoint.evalAfterDisplay} · classified as {TAG_LABEL[turningPoint.cls]}
-              </div>
-            </div>
-          )}
 
           {rows.length > 0 && (
             <div className="panel">
@@ -310,28 +379,11 @@ export default function App() {
                 {movePairs(rows).map(p => (
                   <div className="move-pair" key={p.moveNo}>
                     <div className="move-num mono">{p.moveNo}</div>
-                    <MoveCell row={p.white} active={boardIndex === (p.white?.idx ?? -2) + 1} onSelect={setBoardIndex} />
-                    <MoveCell row={p.black} active={boardIndex === (p.black?.idx ?? -2) + 1} onSelect={setBoardIndex} />
+                    <MoveCell row={p.white} active={boardIndex === (p.white?.idx ?? -2) + 1} onSelect={goToIndex} />
+                    <MoveCell row={p.black} active={boardIndex === (p.black?.idx ?? -2) + 1} onSelect={goToIndex} />
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-
-          {rows.length > 0 && (
-            <div className="panel ask-box" style={{ marginTop: 18 }}>
-              <h2>Ask about this game</h2>
-              <textarea
-                placeholder="e.g. Why does this move actually work? What should have been played instead?"
-                value={askText}
-                onChange={e => setAskText(e.target.value)}
-                style={{ minHeight: 60 }}
-              />
-              <div className="row">
-                <button className="small" onClick={askClaude} disabled={asking}>Ask Claude</button>
-                <button className="small ghost" onClick={downloadReport}>Download report (.md)</button>
-              </div>
-              {askAnswer && <div className="answer">{askAnswer}</div>}
             </div>
           )}
         </div>

@@ -77,8 +77,11 @@ header.hero {
 h1 { font-size: 27px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
 .hero p { margin: 0; color: var(--ink-soft); font-size: 15px; max-width: 60ch; }
 
-.layout { display: grid; grid-template-columns: 340px 1fr; gap: 30px; align-items: start; }
+.layout { display: grid; grid-template-columns: 1fr 360px; gap: 30px; align-items: start; }
 @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+.side-panel { display: flex; flex-direction: column; }
+.board-column > * + * { margin-top: 22px; }
+@media (max-width: 860px) { .side-panel { order: -1; } }
 
 .panel {
   background: var(--paper-raised); border: 1px solid var(--line);
@@ -152,7 +155,18 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 .tag-mistake { color: var(--mistake); background: var(--mistake-bg); }
 .tag-blunder { color: var(--blunder); background: var(--blunder-bg); }
 
-.board-panel { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 22px; }
+.board-panel { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.board-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  min-height: 320px; border: 1px dashed var(--line); border-radius: var(--radius);
+  padding: 24px; text-align: center; color: var(--ink-soft);
+}
+.board-empty-icon {
+  width: 72px; height: 72px; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
+  display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr);
+}
+.board-empty-icon div:nth-child(odd) { background: var(--board-light); }
+.board-empty-icon div:nth-child(even) { background: var(--board-dark); }
 .board-row { display: flex; gap: 10px; width: 100%; max-width: 636px; }
 .chessboard {
   display: flex; flex-direction: column; flex: 1 1 auto; position: relative;
@@ -178,8 +192,14 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 .board-square.highlight::after {
   content: ''; position: absolute; inset: 0; background: rgba(214, 189, 30, 0.45);
 }
+.piece-layer { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.piece-cell {
+  position: absolute; top: 0; left: 0; width: 12.5%; height: 12.5%;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 200ms ease;
+}
 .piece {
-  width: 78%; height: 78%; position: relative; z-index: 1;
+  width: 78%; height: 78%;
   filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));
 }
 .coord {
@@ -194,7 +214,7 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 
 .turning-point {
   border: 1px solid var(--brilliant); background: var(--brilliant-bg);
-  border-radius: var(--radius); padding: 16px 18px; margin-bottom: 22px;
+  border-radius: var(--radius); padding: 16px 18px;
 }
 .turning-point h3 { margin: 0 0 6px; font-size: 15px; }
 

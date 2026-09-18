@@ -13,10 +13,26 @@ function squareToXY(square, flipped) {
   return { x: flipped ? 7 - f : f, y: flipped ? 7 - r : r };
 }
 
+// Squares (in board order) occupied on the current FEN, e.g. [{ square: 'e4', piece: 'P' }, ...].
+function occupiedSquares(fen) {
+  const out = [];
+  fen.split(' ')[0].split('/').forEach((rank, rIdx) => {
+    let fIdx = 0;
+    for (const ch of rank) {
+      if (/\d/.test(ch)) { fIdx += Number(ch); continue; }
+      out.push({ square: FILES[fIdx] + (8 - rIdx), piece: ch });
+      fIdx++;
+    }
+  });
+  return out;
+}
+
 // fen: full FEN string. lastMove: chess.js verbose move object ({ from, to }) or undefined.
 // flipped: true shows Black's perspective (Black at the bottom).
 // arrow: { from, to } squares to draw a translucent suggestion arrow between, or null/undefined.
-export default function Chessboard({ fen, lastMove, flipped = false, arrow }) {
+// animatingMove: { pieceFrom, pieceTo, rookFrom?, rookTo? } — squares (in "current fen" terms)
+// whose occupant should slide in from its previous square instead of popping in place.
+export default function Chessboard({ fen, lastMove, flipped = false, arrow, animatingMove }) {
   const ranks = useMemo(() => {
     const boardPart = fen.split(' ')[0];
     return boardPart.split('/').map(rank => {
@@ -32,6 +48,8 @@ export default function Chessboard({ fen, lastMove, flipped = false, arrow }) {
     });
   }, [fen]);
 
+  const pieces = useMemo(() => occupiedSquares(fen), [fen]);
+
   const rankOrder = flipped ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
   const fileOrder = flipped ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
 
@@ -40,7 +58,6 @@ export default function Chessboard({ fen, lastMove, flipped = false, arrow }) {
       {rankOrder.map((rIdx, displayR) => (
         <div className="board-rank" key={rIdx}>
           {fileOrder.map((fIdx, displayF) => {
-            const piece = ranks[rIdx][fIdx];
             const square = FILES[fIdx] + (8 - rIdx);
             const isLight = (rIdx + fIdx) % 2 === 0;
             const isHighlighted = lastMove && (square === lastMove.from || square === lastMove.to);
@@ -52,12 +69,38 @@ export default function Chessboard({ fen, lastMove, flipped = false, arrow }) {
               >
                 {displayF === 0 && <span className="coord rank-coord">{8 - rIdx}</span>}
                 {displayR === 7 && <span className="coord file-coord">{FILES[fIdx]}</span>}
-                {piece && <img className="piece" src={`/pieces/${PIECE_FILE[piece]}.svg`} alt={PIECE_FILE[piece]} draggable={false} />}
               </div>
             );
           })}
         </div>
       ))}
+      <div className="piece-layer">
+        {pieces
+          .map(({ square, piece }) => {
+            // Key the animated piece by the square it occupied *before* this transition
+            // (matching the key its DOM node had on the previous render) so React reuses
+            // the same element and its transform change animates instead of popping.
+            let key = 'sq:' + square;
+            if (animatingMove) {
+              if (square === animatingMove.pieceTo) key = 'sq:' + animatingMove.pieceFrom;
+              else if (square === animatingMove.rookTo) key = 'sq:' + animatingMove.rookFrom;
+            }
+            return { key, square, piece };
+          })
+          // Render order follows the (frozen, pre-move) key rather than the current square,
+          // so a moving piece's array position doesn't shift relative to its siblings. React
+          // otherwise has to insertBefore it into its new slot, and repositioning + restyling
+          // an element in the same commit makes browsers skip the CSS transition entirely.
+          .sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
+          .map(({ key, square, piece }) => {
+            const { x, y } = squareToXY(square, flipped);
+            return (
+              <div className="piece-cell" key={key} style={{ transform: `translate(${x * 100}%, ${y * 100}%)` }}>
+                <img className="piece" src={`/pieces/${PIECE_FILE[piece]}.svg`} alt={PIECE_FILE[piece]} draggable={false} />
+              </div>
+            );
+          })}
+      </div>
       {arrow && <BestMoveArrow from={arrow.from} to={arrow.to} flipped={flipped} />}
     </div>
   );
