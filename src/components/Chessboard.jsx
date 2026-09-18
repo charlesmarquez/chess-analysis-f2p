@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-const PIECE_GLYPH = {
-  K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
-  k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟'
+const PIECE_FILE = {
+  K: 'wK', Q: 'wQ', R: 'wR', B: 'wB', N: 'wN', P: 'wP',
+  k: 'bK', q: 'bQ', r: 'bR', b: 'bB', n: 'bN', p: 'bP'
 };
 
 // fen: full FEN string. lastMove: chess.js verbose move object ({ from, to }) or undefined.
@@ -38,7 +38,7 @@ export default function Chessboard({ fen, lastMove }) {
               >
                 {fIdx === 0 && <span className="coord rank-coord">{8 - rIdx}</span>}
                 {rIdx === 7 && <span className="coord file-coord">{FILES[fIdx]}</span>}
-                {piece && <span className="piece">{PIECE_GLYPH[piece]}</span>}
+                {piece && <img className="piece" src={`/pieces/${PIECE_FILE[piece]}.svg`} alt={PIECE_FILE[piece]} draggable={false} />}
               </div>
             );
           })}
