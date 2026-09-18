@@ -45,6 +45,14 @@ export function fmtEval(res, whiteToMove) {
   return (white / 100).toFixed(2);
 }
 
+// Converts an engine result (relative to the side to move) into White's perspective.
+export function whiteEvalOf(res, whiteToMove) {
+  if (res.mate !== null && res.mate !== undefined) {
+    return { cp: null, mate: whiteToMove ? res.mate : -res.mate };
+  }
+  return { cp: whiteToMove ? (res.cp || 0) : -(res.cp || 0), mate: null };
+}
+
 export function parseGame(pgnText) {
   const game = new Chess();
   const ok = game.load_pgn(pgnText, { sloppy: true });

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { initEngine, evaluate } from './lib/engine.js';
-import { parseGame, scoreToCp, fmtEval, classify, detectSacrifice, TAG_LABEL } from './lib/analysis.js';
+import { parseGame, scoreToCp, fmtEval, classify, detectSacrifice, whiteEvalOf, TAG_LABEL } from './lib/analysis.js';
 import Chessboard from './components/Chessboard.jsx';
+import EvalBar from './components/EvalBar.jsx';
 
 const ROW_CLASS = {
   brilliant: 'flagged', best: '', good: '', inaccuracy: 'bad', mistake: 'bad', blunder: 'worse'
@@ -52,11 +53,18 @@ export default function App() {
   const [asking, setAsking] = useState(false);
   const [positions, setPositions] = useState([]);
   const [boardIndex, setBoardIndex] = useState(0);
+  const [currentEval, setCurrentEval] = useState({ cp: 0, mate: null });
 
   const engineRef = useRef(null);
   const stopRef = useRef(false);
   const analysisRef = useRef(null);
   const movesRef = useRef([]);
+  const evalsRef = useRef([]);
+
+  useEffect(() => {
+    const res = evalsRef.current[boardIndex];
+    if (res) setCurrentEval(whiteEvalOf(res, boardIndex % 2 === 0));
+  }, [boardIndex]);
 
   useEffect(() => {
     function onKeyDown(e) {
@@ -107,12 +115,14 @@ export default function App() {
 
     const n = sanList.length;
     const evals = new Array(positions.length);
+    evalsRef.current = evals;
 
     for (let i = 0; i < positions.length; i++) {
       if (stopRef.current) { setStatus('Stopped.'); break; }
       setStatus(`Analyzing position ${i + 1} / ${positions.length}…`);
       setProgress(Math.round((i / positions.length) * 100));
       evals[i] = await evaluate(engineRef.current, positions[i], depth);
+      setCurrentEval(whiteEvalOf(evals[i], i % 2 === 0));
     }
     setProgress(100);
     setStatus('Analysis complete.');
@@ -260,7 +270,10 @@ export default function App() {
         <div className="main">
           {positions.length > 0 && (
             <div className="board-panel">
-              <Chessboard fen={positions[boardIndex]} lastMove={movesRef.current[boardIndex - 1]} />
+              <div className="board-row">
+                <EvalBar cp={currentEval.cp} mate={currentEval.mate} />
+                <Chessboard fen={positions[boardIndex]} lastMove={movesRef.current[boardIndex - 1]} />
+              </div>
               <div className="board-nav">
                 <button className="small ghost" onClick={() => setBoardIndex(i => Math.max(0, i - 1))} disabled={boardIndex === 0}>← Prev</button>
                 <span className="mono small">{boardIndex} / {positions.length - 1}</span>
