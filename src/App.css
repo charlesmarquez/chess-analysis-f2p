@@ -52,13 +52,18 @@
 }
 
 * { box-sizing: border-box; }
+html, body { overflow-x: hidden; }
 body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
   font-family: 'Source Serif 4', Georgia, serif;
   line-height: 1.5;
+  scrollbar-color: var(--ink-soft) transparent; scrollbar-width: thin;
 }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--ink-soft); border-radius: 8px; }
 .mono { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; }
 
 .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 80px; }
@@ -120,40 +125,80 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 .progress-track { height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 8px; }
 .progress-fill { height: 100%; background: var(--brilliant); transition: width 0.2s ease; }
 
-.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 4px; }
-.stat { text-align: center; padding: 10px 4px; border: 1px solid var(--line); border-radius: var(--radius); }
-.stat .n { font-size: 19px; font-weight: 600; display: block; }
-.stat .l { font-size: 11px; color: var(--ink-soft); }
+/* Review panel: a self-contained dark card (chess.com's analysis panel is dark
+   regardless of the site's own light background) holding the move list + summary. */
+.review-panel {
+  --rp-bg: #262421;
+  --rp-bg-alt: #2C2925;
+  --rp-ink: #EDEAE4;
+  --rp-ink-soft: #8C8983;
+  --rp-line: rgba(255,255,255,0.08);
+  --rp-brilliant: #4FC6BA;
+  --rp-best: #C9C6BE;
+  --rp-good: #7FA8D9;
+  --rp-inaccuracy: #E0B357;
+  --rp-mistake: #E0916F;
+  --rp-blunder: #E28B8B;
+  background: var(--rp-bg); color: var(--rp-ink);
+  border-radius: var(--radius); border: 1px solid rgba(0,0,0,0.35);
+  padding: 16px; box-shadow: var(--shadow);
+}
+.review-header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.review-header h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--rp-ink); }
+.review-engine { font-size: 11px; color: var(--rp-ink-soft); }
 
-.movelist { display: flex; flex-direction: column; max-height: 420px; overflow-y: auto; }
+.movelist {
+  display: flex; flex-direction: column; max-height: 420px;
+  overflow-y: auto; overflow-x: hidden; border-radius: var(--radius);
+  scrollbar-color: var(--rp-ink-soft) transparent; scrollbar-width: thin;
+}
+.movelist::-webkit-scrollbar { width: 8px; }
+.movelist::-webkit-scrollbar-track { background: transparent; }
+.movelist::-webkit-scrollbar-thumb { background: var(--rp-ink-soft); border-radius: 8px; }
+
 .move-pair {
   display: grid; grid-template-columns: 34px 1fr 1fr; gap: 2px; align-items: stretch;
 }
-.move-pair:nth-child(odd) { background: var(--paper); }
+.move-pair:nth-child(odd) { background: var(--rp-bg-alt); }
 .move-num {
   display: flex; align-items: center; justify-content: center;
-  color: var(--ink-soft); font-size: 12.5px; font-family: 'IBM Plex Mono', monospace;
+  color: var(--rp-ink-soft); font-size: 12.5px; font-family: 'IBM Plex Mono', monospace;
 }
 .move-cell {
-  display: flex; align-items: center; padding: 8px 10px; cursor: pointer;
-  font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 14px;
+  display: flex; align-items: center; padding: 8px 10px; cursor: pointer; min-width: 0;
+  font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 14px; color: var(--rp-ink);
 }
-.move-cell:hover { background: var(--line); }
+.move-cell:hover { background: rgba(255,255,255,0.06); }
 .move-cell.empty { cursor: default; }
-.move-cell.flagged { background: var(--brilliant-bg); }
-.move-cell.bad { background: var(--mistake-bg); }
-.move-cell.worse { background: var(--blunder-bg); }
-.move-cell.active { box-shadow: inset 0 0 0 1px var(--brilliant); }
+.move-cell.flagged { background: rgba(79,198,186,0.16); }
+.move-cell.bad { background: rgba(224,145,111,0.12); }
+.move-cell.worse { background: rgba(226,139,139,0.16); }
+.move-cell.active { box-shadow: inset 0 0 0 1px var(--rp-brilliant); }
+.move-san { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .move-tag {
-  font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 10px;
+  font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 10px; flex: none;
   display: inline-block; margin-left: 7px; letter-spacing: 0.02em; vertical-align: middle;
 }
-.tag-brilliant { background: var(--brilliant); color: var(--paper-raised); }
-.tag-best { background: var(--line); color: var(--ink-soft); }
+.tag-brilliant { background: var(--rp-brilliant); color: #0B211F; }
+.tag-best { background: rgba(255,255,255,0.12); color: var(--rp-best); }
 .tag-good { display: none; }
-.tag-inaccuracy { color: var(--mistake); background: transparent; border: 1px solid var(--mistake); }
-.tag-mistake { color: var(--mistake); background: var(--mistake-bg); }
-.tag-blunder { color: var(--blunder); background: var(--blunder-bg); }
+.tag-inaccuracy { color: var(--rp-inaccuracy); background: transparent; border: 1px solid var(--rp-inaccuracy); }
+.tag-mistake { color: var(--rp-mistake); background: rgba(224,145,111,0.16); }
+.tag-blunder { color: var(--rp-blunder); background: rgba(226,139,139,0.18); }
+
+.review-summary {
+  display: flex; flex-wrap: wrap; gap: 8px 16px;
+  margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rp-line);
+  font-size: 12.5px;
+}
+.review-chip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.chip-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.dot-brilliant { background: var(--rp-brilliant); }
+.dot-best { background: var(--rp-best); }
+.dot-good { background: var(--rp-good); }
+.dot-inaccuracy { background: var(--rp-inaccuracy); }
+.dot-mistake { background: var(--rp-mistake); }
+.dot-blunder { background: var(--rp-blunder); }
 
 .board-panel { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .board-empty {

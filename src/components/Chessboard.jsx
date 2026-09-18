@@ -84,6 +84,10 @@ export default function Chessboard({ fen, lastMove, flipped = false, arrow, anim
             if (animatingMove) {
               if (square === animatingMove.pieceTo) key = 'sq:' + animatingMove.pieceFrom;
               else if (square === animatingMove.rookTo) key = 'sq:' + animatingMove.rookFrom;
+              // Undoing a capture: the reappearing piece sits on the same square the
+              // retreating piece is keyed by above (its own pre-undo square) — namespace
+              // it separately so the two don't collide on one key.
+              else if (square === animatingMove.revealedSquare) key = 'revealed:' + square;
             }
             return { key, square, piece };
           })

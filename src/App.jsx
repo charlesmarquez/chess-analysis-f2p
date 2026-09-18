@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { initEngine, evaluate } from './lib/engine.js';
 import { parseGame, scoreToCp, fmtEval, classify, detectSacrifice, whiteEvalOf, parseUciMove, TAG_LABEL } from './lib/analysis.js';
 import Chessboard from './components/Chessboard.jsx';
@@ -26,7 +26,7 @@ function MoveCell({ row, active, onSelect }) {
       title={`${row.evalBeforeDisplay} → ${row.evalAfterDisplay}`}
       onClick={() => onSelect(row.idx + 1)}
     >
-      {row.san}<span className={'move-tag tag-' + row.cls}>{TAG_LABEL[row.cls]}</span>
+      <span className="move-san">{row.san}</span><span className={'move-tag tag-' + row.cls}>{TAG_LABEL[row.cls]}</span>
     </div>
   );
 }
@@ -77,6 +77,19 @@ export default function App() {
     return () => clearTimeout(t);
   }, [animatingMove]);
 
+  // Tracks the boardIndex that's actually been committed/rendered — deliberately NOT
+  // updated eagerly inside goToIndex. If moves are requested faster than React can
+  // render them (rapid clicks/key-repeat), several goToIndex calls can land in the
+  // same batch; only the last one's state actually reaches the screen. Reading this
+  // ref (rather than an eagerly-mutated one) means that last call still measures its
+  // delta against what's really on screen, correctly detects a multi-step jump, and
+  // falls back to a snap — instead of animating a single piece with a stale/mismatched
+  // from-square, which is what left the leftover "ghost" piece images during fast
+  // navigation.
+  useLayoutEffect(() => {
+    boardIndexRef.current = boardIndex;
+  }, [boardIndex]);
+
   // Navigates the board. For a single-step move (the common "stepping through
   // moves" case) this also computes the sliding-piece animation and applies it
   // in the SAME state update as the index change, so Chessboard's very first
@@ -86,7 +99,6 @@ export default function App() {
   function goToIndex(newIndexRaw) {
     const newIndex = Math.max(0, Math.min(positions.length - 1, newIndexRaw));
     const prev = boardIndexRef.current;
-    boardIndexRef.current = newIndex;
     const delta = newIndex - prev;
 
     let anim = null;
@@ -101,6 +113,13 @@ export default function App() {
           const rookToFile = move.flags.includes('k') ? 'f' : 'd';
           anim.rookFrom = (forward ? rookFromFile : rookToFile) + rank;
           anim.rookTo = (forward ? rookToFile : rookFromFile) + rank;
+        }
+        // Undoing a (non-en-passant) capture brings the captured piece back onto
+        // move.to — the same square the retreating piece is keyed by (its pre-undo
+        // square). Without flagging it, both pieces would compute the identical
+        // key and collide.
+        if (!forward && move.captured && !move.flags.includes('e')) {
+          anim.revealedSquare = move.to;
         }
       }
     }
@@ -358,23 +377,12 @@ export default function App() {
             <div className="progress-track"><div className="progress-fill" style={{ width: progress + '%' }} /></div>
           </div>
 
-          {counts && (
-            <div className="panel">
-              <h2>Summary</h2>
-              <div className="stat-grid">
-                {['brilliant', 'blunder', 'mistake', 'inaccuracy', 'good', 'best'].map(k => (
-                  <div className="stat" key={k}>
-                    <span className="n mono">{counts[k]}</span>
-                    <span className="l">{TAG_LABEL[k]}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {rows.length > 0 && (
-            <div className="panel">
-              <h2>Move by move</h2>
+            <div className="review-panel">
+              <div className="review-header">
+                <h2>Analysis</h2>
+                <span className="review-engine mono">Stockfish 11 · depth {depth}</span>
+              </div>
               <div className="movelist">
                 {movePairs(rows).map(p => (
                   <div className="move-pair" key={p.moveNo}>
@@ -384,6 +392,17 @@ export default function App() {
                   </div>
                 ))}
               </div>
+              {counts && (
+                <div className="review-summary">
+                  {['brilliant', 'best', 'good', 'inaccuracy', 'mistake', 'blunder']
+                    .filter(k => counts[k] > 0)
+                    .map(k => (
+                      <span className="review-chip" key={k}>
+                        <span className={'chip-dot dot-' + k} />{counts[k]} {TAG_LABEL[k]}
+                      </span>
+                    ))}
+                </div>
+              )}
             </div>
           )}
         </div>
