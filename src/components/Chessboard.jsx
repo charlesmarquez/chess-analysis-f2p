@@ -7,7 +7,9 @@ const PIECE_FILE = {
 };
 
 // fen: full FEN string. lastMove: chess.js verbose move object ({ from, to }) or undefined.
-export default function Chessboard({ fen, lastMove }) {
+// selected: currently selected square (or null). legalTargets: array of destination squares to hint.
+// onSquareClick(square): if provided, the board becomes clickable.
+export default function Chessboard({ fen, lastMove, selected, legalTargets = [], onSquareClick }) {
   const ranks = useMemo(() => {
     const boardPart = fen.split(' ')[0];
     return boardPart.split('/').map(rank => {
@@ -24,21 +26,26 @@ export default function Chessboard({ fen, lastMove }) {
   }, [fen]);
 
   return (
-    <div className="chessboard">
+    <div className={'chessboard' + (onSquareClick ? ' interactive' : '')}>
       {ranks.map((rank, rIdx) => (
         <div className="board-rank" key={rIdx}>
           {rank.map((piece, fIdx) => {
             const square = FILES[fIdx] + (8 - rIdx);
             const isLight = (rIdx + fIdx) % 2 === 0;
             const isHighlighted = lastMove && (square === lastMove.from || square === lastMove.to);
+            const isSelected = selected === square;
+            const isLegalTarget = legalTargets.includes(square);
             return (
               <div
                 key={square}
-                className={'board-square' + (isLight ? ' light' : ' dark') + (isHighlighted ? ' highlight' : '')}
+                data-square={square}
+                className={'board-square' + (isLight ? ' light' : ' dark') + (isHighlighted ? ' highlight' : '') + (isSelected ? ' selected' : '')}
+                onClick={onSquareClick ? () => onSquareClick(square) : undefined}
               >
                 {fIdx === 0 && <span className="coord rank-coord">{8 - rIdx}</span>}
                 {rIdx === 7 && <span className="coord file-coord">{FILES[fIdx]}</span>}
                 {piece && <img className="piece" src={`/pieces/${PIECE_FILE[piece]}.svg`} alt={PIECE_FILE[piece]} draggable={false} />}
+                {isLegalTarget && <span className="legal-dot" />}
               </div>
             );
           })}

@@ -53,6 +53,10 @@ export function whiteEvalOf(res, whiteToMove) {
   return { cp: whiteToMove ? (res.cp || 0) : -(res.cp || 0), mate: null };
 }
 
+export function parseUciMove(uci) {
+  return { from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.length > 4 ? uci.slice(4, 5) : undefined };
+}
+
 export function parseGame(pgnText) {
   const game = new Chess();
   const ok = game.load_pgn(pgnText, { sloppy: true });
@@ -76,11 +80,7 @@ export function detectSacrifice({ positions, i, moverIsWhite, evalBefore, evalAf
   if (!replyPv || replyPv.length < 4) return false;
   try {
     const tmp = new Chess(positions[i + 1]);
-    const mv = tmp.move({
-      from: replyPv.slice(0, 2),
-      to: replyPv.slice(2, 4),
-      promotion: replyPv.length > 4 ? replyPv.slice(4, 5) : undefined
-    });
+    const mv = tmp.move(parseUciMove(replyPv));
     if (!mv || !mv.captured || PIECE_VALUES[mv.captured] < 3) return false;
 
     const moverMaterialBefore = moverIsWhite ? materialDiff(positions[i]) : -materialDiff(positions[i]);

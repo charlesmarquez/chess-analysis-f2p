@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { Chess } from 'chess.js';
 import { initEngine, evaluate } from './lib/engine.js';
-import { parseGame, scoreToCp, fmtEval, classify, detectSacrifice, whiteEvalOf, TAG_LABEL } from './lib/analysis.js';
+import { parseGame, scoreToCp, fmtEval, classify, detectSacrifice, whiteEvalOf, parseUciMove, TAG_LABEL } from './lib/analysis.js';
 import Chessboard from './components/Chessboard.jsx';
 import EvalBar from './components/EvalBar.jsx';
 
@@ -54,6 +55,11 @@ export default function App() {
   const [positions, setPositions] = useState([]);
   const [boardIndex, setBoardIndex] = useState(0);
   const [currentEval, setCurrentEval] = useState({ cp: 0, mate: null });
+  const [guessMode, setGuessMode] = useState(false);
+  const [selectedSquare, setSelectedSquare] = useState(null);
+  const [legalTargets, setLegalTargets] = useState([]);
+  const [guessResult, setGuessResult] = useState(null);
+  const [guessing, setGuessing] = useState(false);
 
   const engineRef = useRef(null);
   const stopRef = useRef(false);
@@ -65,6 +71,75 @@ export default function App() {
     const res = evalsRef.current[boardIndex];
     if (res) setCurrentEval(whiteEvalOf(res, boardIndex % 2 === 0));
   }, [boardIndex]);
+
+  useEffect(() => {
+    setSelectedSquare(null);
+    setLegalTargets([]);
+    setGuessResult(null);
+  }, [boardIndex]);
+
+  function handleSquareClick(square) {
+    if (guessing) return;
+    const chess = new Chess(positions[boardIndex]);
+    const sideToMove = boardIndex % 2 === 0 ? 'w' : 'b';
+
+    if (selectedSquare && legalTargets.includes(square)) {
+      submitGuess(selectedSquare, square);
+      return;
+    }
+
+    const piece = chess.get(square);
+    if (piece && piece.color === sideToMove) {
+      setSelectedSquare(square);
+      setLegalTargets(chess.moves({ square, verbose: true }).map(m => m.to));
+    } else {
+      setSelectedSquare(null);
+      setLegalTargets([]);
+    }
+  }
+
+  async function submitGuess(from, to) {
+    setSelectedSquare(null);
+    setLegalTargets([]);
+
+    const chess = new Chess(positions[boardIndex]);
+    const played = chess.move({ from, to, promotion: 'q' });
+    if (!played) return;
+
+    const evalHere = evalsRef.current[boardIndex];
+    const bestUci = evalHere && evalHere.pv && evalHere.pv[0];
+    const bestChess = new Chess(positions[boardIndex]);
+    const bestMove = bestUci ? bestChess.move(parseUciMove(bestUci)) : null;
+    const matched = bestMove && bestMove.from === played.from && bestMove.to === played.to
+      && (bestMove.promotion || '') === (played.promotion || '');
+
+    if (matched) {
+      setGuessResult({ matched: true, cls: 'best', userSan: played.san });
+      return;
+    }
+
+    setGuessing(true);
+    try {
+      const responseEval = await evaluate(engineRef.current, chess.fen(), depth);
+      const moverIsWhite = boardIndex % 2 === 0;
+      const evalBefore = scoreToCp(evalHere);
+      const evalAfterForMover = -scoreToCp(responseEval);
+      const cpLoss = Math.max(0, evalBefore - evalAfterForMover);
+      const replyPv = responseEval.pv && responseEval.pv[0];
+      const isSac = detectSacrifice({
+        positions: [positions[boardIndex], chess.fen()], i: 0, moverIsWhite, evalBefore, evalAfterForMover, replyPv
+      });
+      setGuessResult({
+        matched: false,
+        cls: classify(cpLoss, isSac),
+        userSan: played.san,
+        bestSan: bestMove ? bestMove.san : '—',
+        evalAfterDisplay: fmtEval(responseEval, !moverIsWhite)
+      });
+    } finally {
+      setGuessing(false);
+    }
+  }
 
   useEffect(() => {
     function onKeyDown(e) {
@@ -87,6 +162,8 @@ export default function App() {
     setTurningPoint(null);
     setAskAnswer('');
     setProgress(0);
+    setGuessMode(false);
+    setGuessResult(null);
 
     let game;
     try {
@@ -272,13 +349,44 @@ export default function App() {
             <div className="board-panel">
               <div className="board-row">
                 <EvalBar cp={currentEval.cp} mate={currentEval.mate} />
-                <Chessboard fen={positions[boardIndex]} lastMove={movesRef.current[boardIndex - 1]} />
+                <Chessboard
+                  fen={positions[boardIndex]}
+                  lastMove={movesRef.current[boardIndex - 1]}
+                  selected={guessMode ? selectedSquare : null}
+                  legalTargets={guessMode ? legalTargets : []}
+                  onSquareClick={guessMode ? handleSquareClick : undefined}
+                />
               </div>
               <div className="board-nav">
                 <button className="small ghost" onClick={() => setBoardIndex(i => Math.max(0, i - 1))} disabled={boardIndex === 0}>← Prev</button>
                 <span className="mono small">{boardIndex} / {positions.length - 1}</span>
                 <button className="small ghost" onClick={() => setBoardIndex(i => Math.min(positions.length - 1, i + 1))} disabled={boardIndex === positions.length - 1}>Next →</button>
+                <button
+                  className={'small' + (guessMode ? '' : ' ghost')}
+                  onClick={() => setGuessMode(g => !g)}
+                  disabled={!rows.length}
+                >
+                  {guessMode ? 'Stop guessing' : '🎯 Guess the move'}
+                </button>
               </div>
+              {guessMode && (
+                <div className="guess-panel">
+                  {guessing && <div className="guess-status mono">Checking your move…</div>}
+                  {!guessing && !guessResult && (
+                    <div className="guess-status mono">
+                      Click a {boardIndex % 2 === 0 ? 'White' : 'Black'} piece, then a square, to guess the engine's best move here.
+                    </div>
+                  )}
+                  {!guessing && guessResult && guessResult.matched && (
+                    <div className="guess-feedback flagged">✓ {guessResult.userSan} — that's the engine's top choice.</div>
+                  )}
+                  {!guessing && guessResult && !guessResult.matched && (
+                    <div className={'guess-feedback ' + ROW_CLASS[guessResult.cls]}>
+                      {guessResult.userSan} — {TAG_LABEL[guessResult.cls]} (eval {guessResult.evalAfterDisplay}). Engine's best: {guessResult.bestSan}.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

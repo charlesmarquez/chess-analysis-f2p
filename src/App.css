@@ -177,6 +177,13 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 .board-square.highlight::after {
   content: ''; position: absolute; inset: 0; background: rgba(214, 189, 30, 0.45);
 }
+.board-square.selected { box-shadow: inset 0 0 0 3px rgba(255, 213, 0, 0.85); }
+.chessboard.interactive .board-square { cursor: pointer; }
+.legal-dot {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 26%; height: 26%; border-radius: 50%; background: rgba(20, 20, 20, 0.35);
+  z-index: 1; pointer-events: none;
+}
 .piece {
   width: 78%; height: 78%; position: relative; z-index: 1;
   filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));
@@ -189,7 +196,15 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 .board-square.dark .coord { color: var(--board-light); }
 .rank-coord { top: 2px; left: 4px; }
 .file-coord { bottom: 1px; right: 4px; }
-.board-nav { display: flex; gap: 10px; align-items: center; }
+.board-nav { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.guess-panel { width: 100%; max-width: 496px; font-size: 13px; }
+.guess-status { color: var(--ink-soft); text-align: center; }
+.guess-feedback {
+  padding: 9px 12px; border-radius: var(--radius); border: 1px solid var(--line); text-align: center;
+}
+.guess-feedback.flagged { background: var(--brilliant-bg); border-color: var(--brilliant); }
+.guess-feedback.bad { background: var(--mistake-bg); border-color: var(--mistake); }
+.guess-feedback.worse { background: var(--blunder-bg); border-color: var(--blunder); }
 
 .turning-point {
   border: 1px solid var(--brilliant); background: var(--brilliant-bg);
