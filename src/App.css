@@ -125,11 +125,12 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 .movelist { display: flex; flex-direction: column; }
 .move-row {
   display: grid; grid-template-columns: 44px 1fr 90px; gap: 12px; align-items: center;
-  padding: 9px 10px; border-bottom: 1px solid var(--line);
+  padding: 9px 10px; border-bottom: 1px solid var(--line); cursor: pointer;
 }
 .move-row.flagged { background: var(--brilliant-bg); border-radius: var(--radius); }
 .move-row.bad { background: var(--mistake-bg); border-radius: var(--radius); }
 .move-row.worse { background: var(--blunder-bg); border-radius: var(--radius); }
+.move-row.active { box-shadow: inset 0 0 0 1px var(--brilliant); border-radius: var(--radius); }
 .move-num { color: var(--ink-soft); font-size: 12.5px; }
 .move-san { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 14.5px; }
 .move-tag {
@@ -143,6 +144,31 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 .tag-mistake { color: var(--mistake); background: var(--mistake-bg); }
 .tag-blunder { color: var(--blunder); background: var(--blunder-bg); }
 .move-eval { font-size: 12px; color: var(--ink-soft); text-align: right; }
+
+.board-panel { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 22px; }
+.chessboard {
+  display: flex; flex-direction: column;
+  width: 100%; max-width: 460px; aspect-ratio: 1;
+  border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.board-rank { display: flex; flex: 1; }
+.board-square { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; }
+.board-square.light { background: var(--board-light); }
+.board-square.dark { background: var(--board-dark); }
+.board-square.highlight::after {
+  content: ''; position: absolute; inset: 0; background: rgba(214, 189, 30, 0.45);
+}
+.piece {
+  font-size: clamp(20px, 4.5vw, 38px); line-height: 1; position: relative; z-index: 1;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.35));
+}
+.coord { position: absolute; font-size: 9px; font-family: 'IBM Plex Mono', monospace; opacity: 0.65; z-index: 1; }
+.board-square.light .coord { color: var(--board-dark); }
+.board-square.dark .coord { color: var(--board-light); }
+.rank-coord { top: 2px; left: 2px; }
+.file-coord { bottom: 2px; right: 3px; }
+.board-nav { display: flex; gap: 10px; align-items: center; }
 
 .turning-point {
   border: 1px solid var(--brilliant); background: var(--brilliant-bg);

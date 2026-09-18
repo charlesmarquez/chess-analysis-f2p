@@ -58,7 +58,7 @@ export function parseGame(pgnText) {
     positions.push(replay.fen());
     sanList.push(m.san);
   }
-  return { positions, sanList };
+  return { positions, sanList, moves };
 }
 
 // Approximate sacrifice detector: engine's own main line, right after the played

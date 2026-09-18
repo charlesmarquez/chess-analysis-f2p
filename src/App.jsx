@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { initEngine, evaluate } from './lib/engine.js';
 import { parseGame, scoreToCp, fmtEval, classify, detectSacrifice, TAG_LABEL } from './lib/analysis.js';
+import Chessboard from './components/Chessboard.jsx';
 
 const ROW_CLASS = {
   brilliant: 'flagged', best: '', good: '', inaccuracy: 'bad', mistake: 'bad', blunder: 'worse'
@@ -26,10 +27,13 @@ export default function App() {
   const [askText, setAskText] = useState('');
   const [askAnswer, setAskAnswer] = useState('');
   const [asking, setAsking] = useState(false);
+  const [positions, setPositions] = useState([]);
+  const [boardIndex, setBoardIndex] = useState(0);
 
   const engineRef = useRef(null);
   const stopRef = useRef(false);
   const analysisRef = useRef(null);
+  const movesRef = useRef([]);
 
   async function runAnalysis() {
     stopRef.current = false;
@@ -49,6 +53,11 @@ export default function App() {
       return;
     }
 
+    const { positions, sanList, moves } = game;
+    movesRef.current = moves;
+    setPositions(positions);
+    setBoardIndex(0);
+
     if (!engineRef.current) {
       try {
         setStatus('Fetching engine…');
@@ -60,7 +69,6 @@ export default function App() {
       }
     }
 
-    const { positions, sanList } = game;
     const n = sanList.length;
     const evals = new Array(positions.length);
 
@@ -72,6 +80,7 @@ export default function App() {
     }
     setProgress(100);
     setStatus('Analysis complete.');
+    setBoardIndex(positions.length - 1);
 
     const outRows = [];
     const outCounts = { brilliant: 0, best: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 };
@@ -213,6 +222,17 @@ export default function App() {
         </div>
 
         <div className="main">
+          {positions.length > 0 && (
+            <div className="board-panel">
+              <Chessboard fen={positions[boardIndex]} lastMove={movesRef.current[boardIndex - 1]} />
+              <div className="board-nav">
+                <button className="small ghost" onClick={() => setBoardIndex(i => Math.max(0, i - 1))} disabled={boardIndex === 0}>← Prev</button>
+                <span className="mono small">{boardIndex} / {positions.length - 1}</span>
+                <button className="small ghost" onClick={() => setBoardIndex(i => Math.min(positions.length - 1, i + 1))} disabled={boardIndex === positions.length - 1}>Next →</button>
+              </div>
+            </div>
+          )}
+
           {turningPoint && (
             <div className="turning-point">
               <h3>Turning point — {turningPoint.moveNo}{turningPoint.moverIsWhite ? '.' : '...'}{turningPoint.san}</h3>
@@ -227,7 +247,11 @@ export default function App() {
               <h2>Move by move</h2>
               <div className="movelist">
                 {rows.map(r => (
-                  <div className={'move-row ' + ROW_CLASS[r.cls]} key={r.idx}>
+                  <div
+                    className={'move-row ' + ROW_CLASS[r.cls] + (boardIndex === r.idx + 1 ? ' active' : '')}
+                    key={r.idx}
+                    onClick={() => setBoardIndex(r.idx + 1)}
+                  >
                     <div className="move-num mono">{r.moveNo}{r.moverIsWhite ? '.' : '...'}</div>
                     <div className="move-san">{r.san}<span className={'move-tag tag-' + r.cls}>{TAG_LABEL[r.cls]}</span></div>
                     <div className="move-eval mono">{r.evalAfterDisplay}</div>
