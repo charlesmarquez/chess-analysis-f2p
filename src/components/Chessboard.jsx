@@ -63,21 +63,39 @@ export default function Chessboard({ fen, lastMove, flipped = false, arrow }) {
   );
 }
 
+// Single filled polygon (shaft + head as one shape) so a translucent fill never
+// double-blends where a separate stroke and marker would otherwise overlap.
+function arrowPolygonPoints(start, end, { shaftW, headW, headLen }) {
+  const dx = end.x - start.x, dy = end.y - start.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const px = -uy, py = ux;
+  const shaftEnd = { x: end.x - ux * headLen, y: end.y - uy * headLen };
+  const offset = (p, o) => `${p.x + px * o},${p.y + py * o}`;
+  return [
+    offset(start, shaftW / 2),
+    offset(shaftEnd, shaftW / 2),
+    offset(shaftEnd, headW / 2),
+    `${end.x},${end.y}`,
+    offset(shaftEnd, -headW / 2),
+    offset(shaftEnd, -shaftW / 2),
+    offset(start, -shaftW / 2)
+  ].join(' ');
+}
+
 function BestMoveArrow({ from, to, flipped }) {
   const a = squareToXY(from, flipped);
   const b = squareToXY(to, flipped);
+  const start = { x: a.x + 0.5, y: a.y + 0.5 };
+  const endRaw = { x: b.x + 0.5, y: b.y + 0.5 };
+  const dx = endRaw.x - start.x, dy = endRaw.y - start.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const end = { x: endRaw.x - (dx / len) * 0.12, y: endRaw.y - (dy / len) * 0.12 };
+  const points = arrowPolygonPoints(start, end, { shaftW: 0.09, headW: 0.24, headLen: 0.26 });
+
   return (
     <svg className="board-arrows" viewBox="0 0 8 8">
-      <defs>
-        <marker id="best-move-arrowhead" markerWidth="3" markerHeight="3" refX="2.2" refY="1.5" orient="auto">
-          <polygon points="0 0, 3 1.5, 0 3" fill="rgba(60, 130, 246, 0.65)" />
-        </marker>
-      </defs>
-      <line
-        x1={a.x + 0.5} y1={a.y + 0.5} x2={b.x + 0.5} y2={b.y + 0.5}
-        stroke="rgba(60, 130, 246, 0.55)" strokeWidth="0.6" strokeLinecap="round"
-        markerEnd="url(#best-move-arrowhead)"
-      />
+      <polygon points={points} fill="rgba(50, 120, 230, 0.5)" />
     </svg>
   );
 }
