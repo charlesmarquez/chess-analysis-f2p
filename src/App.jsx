@@ -1,12 +1,24 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Chess } from 'chess.js';
 import { initEngine, evaluate } from './lib/engine.js';
-import { parseGame, scoreToCp, fmtEval, classify, detectSacrifice, whiteEvalOf, parseUciMove, TAG_LABEL } from './lib/analysis.js';
+import { parseGame, scoreToCp, fmtEval, classify, detectSacrifice, detectMiss, whiteEvalOf, parseUciMove, pvToLine, TAG_LABEL } from './lib/analysis.js';
 import Chessboard from './components/Chessboard.jsx';
 import EvalBar from './components/EvalBar.jsx';
 
+// In a mate PV, whichever side is to move at ply 0 delivers the mate; that side's
+// moves are the ones a solver practices, alternating with the defender's forced
+// replies. startsWithUser is true when the practiced (mating) side moves first.
+function isUsersTurn(idx, startsWithUser) {
+  return startsWithUser ? idx % 2 === 0 : idx % 2 === 1;
+}
+
 const ROW_CLASS = {
-  brilliant: 'flagged', best: '', good: '', inaccuracy: 'bad', mistake: 'bad', blunder: 'worse'
+  brilliant: 'flagged', best: '', good: '', inaccuracy: 'bad', mistake: 'bad', blunder: 'worse', miss: 'bad'
 };
+
+// Move classes annotated with an on-board badge (chess.com marks these near the
+// moved-to square); good/inaccuracy stay text-only in the move list to avoid noise.
+const BADGE_CLASSES = ['brilliant', 'best', 'mistake', 'blunder', 'miss'];
 
 function movePairs(rows) {
   const pairs = [];
@@ -18,7 +30,7 @@ function movePairs(rows) {
   return pairs;
 }
 
-function MoveCell({ row, active, onSelect }) {
+function MoveCell({ row, active, onSelect, onPlayMate, onPracticeMate, busyWithMate }) {
   if (!row) return <div className="move-cell empty" />;
   return (
     <div
@@ -27,6 +39,27 @@ function MoveCell({ row, active, onSelect }) {
       onClick={() => onSelect(row.idx + 1)}
     >
       <span className="move-san">{row.san}</span><span className={'move-tag tag-' + row.cls}>{TAG_LABEL[row.cls]}</span>
+      {row.mateIn && <span className="mate-flag" title={`Forced mate in ${row.mateIn}`}>#{row.mateIn}</span>}
+      {row.mateIn && (
+        <button
+          className="mate-play-btn"
+          title={`Play out the forced mate in ${row.mateIn} on the board`}
+          disabled={busyWithMate}
+          onClick={e => { e.stopPropagation(); onPlayMate(row); }}
+        >
+          ▶
+        </button>
+      )}
+      {row.mateIn && (
+        <button
+          className="mate-play-btn practice-btn"
+          title={`Practice finding the forced mate in ${row.mateIn}`}
+          disabled={busyWithMate}
+          onClick={e => { e.stopPropagation(); onPracticeMate(row); }}
+        >
+          🎯
+        </button>
+      )}
     </div>
   );
 }
@@ -41,22 +74,24 @@ Be6 a3 35. Ra1 Qc3 36. Ne5 Qxa1+ 37. Kh2 Qb2 38. Nf7 Rg8 39. Bd5 a2 40. Nh6 a1=Q
 
 export default function App() {
   const [pgn, setPgn] = useState(SAMPLE_PGN);
+  const [chessComUrl, setChessComUrl] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState('');
   const [depth, setDepth] = useState(12);
   const [status, setStatus] = useState('Ready. Click "Analyze game" to load the engine and begin.');
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState([]);
   const [counts, setCounts] = useState(null);
-  const [turningPoint, setTurningPoint] = useState(null);
-  const [askText, setAskText] = useState('');
-  const [askAnswer, setAskAnswer] = useState('');
-  const [asking, setAsking] = useState(false);
   const [positions, setPositions] = useState([]);
   const [boardIndex, setBoardIndex] = useState(0);
   const [currentEval, setCurrentEval] = useState({ cp: 0, mate: null });
   const [showArrow, setShowArrow] = useState(false);
   const [flipped, setFlipped] = useState(false);
   const [animatingMove, setAnimatingMove] = useState(null);
+  const [previewStep, setPreviewStep] = useState(-1); // -1 = not previewing a mate line
+  const [previewLine, setPreviewLine] = useState(null); // { fens, moves } for whichever line is playing
+  const [practice, setPractice] = useState(null); // see startPractice() for shape, null when inactive
 
   const engineRef = useRef(null);
   const stopRef = useRef(false);
@@ -64,6 +99,13 @@ export default function App() {
   const movesRef = useRef([]);
   const evalsRef = useRef([]);
   const boardIndexRef = useRef(0);
+  const previewTimerRef = useRef(null);
+  // Squares whose piece was ever restored by an undone capture. Kept permanently (not
+  // just for the duration of that one animation) — see the key-collision note in
+  // Chessboard.jsx for why letting it revert to a plain default key is unsafe.
+  const revealedSquaresRef = useRef(new Set());
+
+  useEffect(() => () => clearInterval(previewTimerRef.current), []);
 
   useEffect(() => {
     const res = evalsRef.current[boardIndex];
@@ -90,6 +132,18 @@ export default function App() {
     boardIndexRef.current = boardIndex;
   }, [boardIndex]);
 
+  // Sliding-piece animation for playing `move` forward — shared by goToIndex's
+  // forward case and the mate-sequence preview, which only ever steps forward.
+  function forwardAnim(move) {
+    const anim = { pieceFrom: move.from, pieceTo: move.to };
+    if (move.flags.includes('k') || move.flags.includes('q')) {
+      const rank = move.color === 'w' ? '1' : '8';
+      anim.rookFrom = (move.flags.includes('k') ? 'h' : 'a') + rank;
+      anim.rookTo = (move.flags.includes('k') ? 'f' : 'd') + rank;
+    }
+    return anim;
+  }
+
   // Navigates the board. For a single-step move (the common "stepping through
   // moves" case) this also computes the sliding-piece animation and applies it
   // in the SAME state update as the index change, so Chessboard's very first
@@ -97,6 +151,8 @@ export default function App() {
   // computing it a tick later (e.g. in a useEffect keyed on boardIndex) is too
   // late: the piece would already have snapped to its new square by then.
   function goToIndex(newIndexRaw) {
+    stopMatePreview();
+    stopPractice();
     const newIndex = Math.max(0, Math.min(positions.length - 1, newIndexRaw));
     const prev = boardIndexRef.current;
     const delta = newIndex - prev;
@@ -106,13 +162,13 @@ export default function App() {
       const forward = delta === 1;
       const move = movesRef.current[forward ? prev : newIndex];
       if (move) {
-        anim = { pieceFrom: forward ? move.from : move.to, pieceTo: forward ? move.to : move.from };
-        if (move.flags.includes('k') || move.flags.includes('q')) {
+        anim = forward
+          ? forwardAnim(move)
+          : { pieceFrom: move.to, pieceTo: move.from };
+        if (!forward && (move.flags.includes('k') || move.flags.includes('q'))) {
           const rank = move.color === 'w' ? '1' : '8';
-          const rookFromFile = move.flags.includes('k') ? 'h' : 'a';
-          const rookToFile = move.flags.includes('k') ? 'f' : 'd';
-          anim.rookFrom = (forward ? rookFromFile : rookToFile) + rank;
-          anim.rookTo = (forward ? rookToFile : rookFromFile) + rank;
+          anim.rookFrom = (move.flags.includes('k') ? 'f' : 'd') + rank;
+          anim.rookTo = (move.flags.includes('k') ? 'h' : 'a') + rank;
         }
         // Undoing a (non-en-passant) capture brings the captured piece back onto
         // move.to — the same square the retreating piece is keyed by (its pre-undo
@@ -120,11 +176,191 @@ export default function App() {
         // key and collide.
         if (!forward && move.captured && !move.flags.includes('e')) {
           anim.revealedSquare = move.to;
+          revealedSquaresRef.current.add(move.to);
         }
       }
     }
     setAnimatingMove(anim);
     setBoardIndex(newIndex);
+  }
+
+  function stopMatePreview() {
+    clearInterval(previewTimerRef.current);
+    previewTimerRef.current = null;
+    setPreviewStep(-1);
+    setPreviewLine(null);
+  }
+
+  // Steps the board through a PV's moves one per tick, using the same sliding-piece
+  // animation as normal navigation — a hypothetical continuation overlaid on the real
+  // board, not the game's actual remaining moves. Shared by the mate panel's own
+  // "play it out" button and every per-row "play this forced mate" button in the
+  // move list, each supplying whichever line it found the mate in.
+  function startPreview(fens, moves) {
+    clearInterval(previewTimerRef.current);
+    setAnimatingMove(null);
+    setPreviewLine({ fens, moves });
+    setPreviewStep(0);
+    previewTimerRef.current = setInterval(() => {
+      setPreviewStep(s => {
+        const next = s + 1;
+        setAnimatingMove(forwardAnim(moves[next - 1]));
+        if (next >= moves.length) {
+          clearInterval(previewTimerRef.current);
+          previewTimerRef.current = null;
+        }
+        return next;
+      });
+    }, 850);
+  }
+
+  // Computes this row's mate line on demand from the engine result already cached
+  // for it — every mate-flagged row plays or practices its own PV independently.
+  function playMateFromRow(row) {
+    const res = evalsRef.current[row.idx + 1];
+    if (!res || !res.mate) return;
+    stopPractice();
+    const { fens, moves } = pvToLine(positions[row.idx + 1], res.pv);
+    startPreview(fens, moves);
+  }
+
+  function stopPractice() {
+    setPractice(null);
+  }
+
+  // Sets up a solvable puzzle from a mate-flagged row: the board jumps to that
+  // position and the practiced (mating) side's moves must be dragged in by hand;
+  // the defender's forced replies are played automatically. If the row's mate isn't
+  // for the side to move there (evals[].mate is negative — the *opponent* forces
+  // mate against whoever's to move), the first PV move is the defender's and gets
+  // auto-played immediately so the user's very first turn is always a mating move.
+  //
+  // `remaining` (not a fixed move list) is the source of truth for progress: every
+  // attempted move is re-verified against a fresh engine call rather than compared
+  // to the one specific line Stockfish originally happened to record, so any move
+  // that objectively keeps the mate on schedule is accepted — not just the exact
+  // recorded PV. `nextHintMove` is refreshed from that same engine call each time
+  // and exists purely to give the hint system *a* correct answer to point at.
+  function practiceMate(row) {
+    const res = evalsRef.current[row.idx + 1];
+    if (!res || !res.mate) return;
+    stopMatePreview();
+    const startFen = positions[row.idx + 1];
+    const { moves } = pvToLine(startFen, res.pv);
+    if (moves.length === 0) return;
+    const sideToMoveIsWhite = (row.idx + 1) % 2 === 0;
+    const startsWithUser = res.mate > 0; // mate>0 means the side to move here is the one delivering it
+    const matingSideIsWhite = startsWithUser ? sideToMoveIsWhite : !sideToMoveIsWhite;
+
+    const chess = new Chess(startFen);
+    let idx = 0;
+    while (idx < moves.length && !isUsersTurn(idx, startsWithUser)) {
+      chess.move(moves[idx].san);
+      idx++;
+    }
+    const mateIn = Math.abs(res.mate);
+    setPractice({
+      mateIn, matingSideIsWhite,
+      chess, fen: chess.fen(), remaining: mateIn, nextHintMove: moves[idx] || null,
+      solvedCount: 0, wrongAttempts: 0, hint: null, feedback: null, wrongMove: null,
+      solved: idx >= moves.length, checking: false, animatingMove: null
+    });
+  }
+
+  // Auto-clears the practice board's sliding animation once its CSS transition
+  // has finished — mirrors the top-level animatingMove effect above, kept
+  // separate because practice moves (the user's drag + the auto-played reply)
+  // are driven independently of normal board navigation.
+  useEffect(() => {
+    if (!practice || !practice.animatingMove) return;
+    const t = setTimeout(() => setPractice(p => (p && p.animatingMove ? { ...p, animatingMove: null } : p)), 220);
+    return () => clearTimeout(t);
+  }, [practice && practice.animatingMove]);
+
+  // wrongMove marks the attempted (from, to) with a board badge — the text feedback
+  // alone was easy to miss since attention is naturally on the board while dragging.
+  function registerWrongPracticeAttempt(from, to) {
+    setPractice(p => {
+      const wrongAttempts = p.wrongAttempts + 1;
+      return {
+        ...p, wrongAttempts, feedback: 'incorrect', checking: false, wrongMove: { from, to },
+        hint: wrongAttempts >= 2 && p.nextHintMove ? { from: p.nextHintMove.from } : p.hint
+      };
+    });
+  }
+
+  async function handlePracticeMove(from, to) {
+    if (!practice || practice.solved || practice.checking) return;
+    const beforeFen = practice.chess.fen();
+    const attempt = new Chess(beforeFen);
+    const mv = attempt.move({ from, to, promotion: 'q' });
+    if (!mv) { registerWrongPracticeAttempt(from, to); return; }
+
+    const remainingAfter = practice.remaining - 1;
+    const moveAnim = forwardAnim(mv);
+    // Commit the user's move immediately so it visibly slides into place — the
+    // drag overlay only shows the piece following the pointer, not landing on its
+    // square, so without this the board briefly reverted to the pre-move position
+    // and then snapped straight to wherever the (possibly two-move) result ended
+    // up once the engine check resolved.
+    setPractice(p => ({ ...p, chess: attempt, fen: attempt.fen(), checking: true, wrongMove: null, animatingMove: moveAnim }));
+
+    // This was meant to be the mating move itself — no position left to hand the
+    // engine (a checkmated position has no legal moves for it to search), so verify
+    // directly instead.
+    if (remainingAfter <= 0) {
+      if (attempt.in_checkmate()) {
+        setPractice(p => ({
+          ...p, remaining: 0, solvedCount: p.solvedCount + 1, wrongAttempts: 0, hint: null,
+          wrongMove: null, feedback: 'correct', nextHintMove: null, solved: true, checking: false
+        }));
+      } else {
+        setPractice(p => ({ ...p, chess: new Chess(beforeFen), fen: beforeFen, checking: false, animatingMove: null }));
+        registerWrongPracticeAttempt(from, to);
+      }
+      return;
+    }
+
+    let res;
+    try {
+      res = await evaluate(engineRef.current, attempt.fen(), depth);
+    } catch {
+      setPractice(p => ({ ...p, chess: new Chess(beforeFen), fen: beforeFen, checking: false, animatingMove: null }));
+      return;
+    }
+    // It's the opponent's move now; a move that kept the mate on schedule leaves
+    // them forced-lost in exactly the moves remaining (negative = bad for them).
+    const stillOnTrack = res.mate != null && res.mate < 0 && Math.abs(res.mate) === remainingAfter;
+    if (!stillOnTrack) {
+      setPractice(p => ({ ...p, chess: new Chess(beforeFen), fen: beforeFen, checking: false, animatingMove: null }));
+      registerWrongPracticeAttempt(from, to);
+      return;
+    }
+
+    const { moves: continuation } = pvToLine(attempt.fen(), res.pv);
+    const replyMove = continuation[0];
+    if (!replyMove) {
+      setPractice(p => ({
+        ...p, remaining: remainingAfter, solvedCount: p.solvedCount + 1, wrongAttempts: 0,
+        hint: null, feedback: 'correct', checking: false, nextHintMove: null
+      }));
+      return;
+    }
+    // A beat after the user's own move lands, slide in the opponent's forced reply
+    // rather than applying both moves in one instant jump.
+    setTimeout(() => {
+      setPractice(p => {
+        if (!p || p.fen !== attempt.fen()) return p; // superseded (exited/restarted practice)
+        const after = new Chess(attempt.fen());
+        after.move(replyMove.san);
+        return {
+          ...p, chess: after, fen: after.fen(), remaining: remainingAfter,
+          solvedCount: p.solvedCount + 1, wrongAttempts: 0, hint: null, wrongMove: null,
+          feedback: 'correct', nextHintMove: continuation[1] || null,
+          checking: false, solved: false, animatingMove: forwardAnim(replyMove)
+        };
+      });
+    }, 260);
   }
 
   useEffect(() => {
@@ -140,18 +376,19 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [positions.length]);
 
-  async function runAnalysis() {
+  async function runAnalysis(pgnOverride) {
+    stopMatePreview();
+    stopPractice();
+    revealedSquaresRef.current = new Set();
     stopRef.current = false;
     setBusy(true);
     setRows([]);
     setCounts(null);
-    setTurningPoint(null);
-    setAskAnswer('');
     setProgress(0);
 
     let game;
     try {
-      game = parseGame(pgn);
+      game = parseGame(pgnOverride || pgn);
     } catch (err) {
       setStatus('Error: ' + err.message);
       setBusy(false);
@@ -194,8 +431,7 @@ export default function App() {
     setBoardIndex(positions.length - 1);
 
     const outRows = [];
-    const outCounts = { brilliant: 0, best: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 };
-    let biggestSwing = null;
+    const outCounts = { brilliant: 0, best: 0, good: 0, miss: 0, inaccuracy: 0, mistake: 0, blunder: 0 };
 
     for (let i = 0; i < n; i++) {
       if (!evals[i] || !evals[i + 1]) break;
@@ -205,11 +441,23 @@ export default function App() {
       const cpLoss = Math.max(0, evalBefore - evalAfterForMover);
       const replyPv = evals[i + 1].pv && evals[i + 1].pv[0];
 
-      const isSac = detectSacrifice({
-        positions, i, moverIsWhite, evalBefore, evalAfterForMover, replyPv
-      });
-
-      const cls = classify(cpLoss, isSac);
+      // A move ending the game in checkmate leaves no legal moves for the engine to
+      // evaluate, so evals[i+1] is just the default {cp:0, mate:null} — not a real
+      // read of the position. Left alone, that reads as a catastrophic eval swing
+      // (mate score -> 0) and gets misclassified as a blunder or, worse, a "Miss"
+      // (the mate score "disappearing" looks exactly like losing a forced mate). The
+      // move that actually delivers mate is by definition correct.
+      const deliversMate = sanList[i].endsWith('#');
+      let cls;
+      if (deliversMate) {
+        cls = 'best';
+      } else {
+        const isSac = detectSacrifice({
+          positions, i, moverIsWhite, evalBefore, evalAfterForMover, replyPv
+        });
+        const isMiss = detectMiss({ evalBefore, mateBefore: evals[i].mate, evalAfterForMover, cpLoss });
+        cls = classify(cpLoss, isSac, { ply: i, isMiss });
+      }
       outCounts[cls]++;
 
       const row = {
@@ -220,56 +468,70 @@ export default function App() {
         cls,
         cpLoss,
         evalBeforeDisplay: fmtEval(evals[i], moverIsWhite),
-        evalAfterDisplay: fmtEval(evals[i + 1], !moverIsWhite)
+        evalAfterDisplay: fmtEval(evals[i + 1], !moverIsWhite),
+        mateIn: evals[i + 1].mate ? Math.abs(evals[i + 1].mate) : null
       };
       outRows.push(row);
-
-      const swingMag = Math.abs(cpLoss) + (cls === 'brilliant' ? 250 : 0);
-      if (!biggestSwing || swingMag > biggestSwing.mag) biggestSwing = { mag: swingMag, row };
     }
 
-    analysisRef.current = { rows: outRows, counts: outCounts, biggestSwing };
+    analysisRef.current = { rows: outRows, counts: outCounts };
     setRows(outRows);
     setCounts(outCounts);
-    setTurningPoint(biggestSwing ? biggestSwing.row : null);
     setBusy(false);
   }
 
-  async function askClaude() {
-    if (!analysisRef.current) return;
-    setAsking(true);
-    setAskAnswer('Thinking…');
-    const { rows: r, biggestSwing } = analysisRef.current;
-    const flagged = r.filter(x => x.cls === 'brilliant' || x.cls === 'blunder' || x.cls === 'mistake');
-    const compact = flagged.map(x =>
-      `${x.moveNo}${x.moverIsWhite ? '.' : '...'}${x.san} [${TAG_LABEL[x.cls]}, eval ${x.evalBeforeDisplay}->${x.evalAfterDisplay}]`
-    ).join('\n');
-    const tp = biggestSwing ? biggestSwing.row : null;
-    const tpLine = tp ? `${tp.moveNo}${tp.moverIsWhite ? '.' : '...'}${tp.san}` : 'n/a';
+  async function loadChessComPgn(url) {
+    const resp = await fetch('/api/chess-com-game?url=' + encodeURIComponent(url));
+    const data = await resp.json();
+    if (!resp.ok || !data.pgn) throw new Error(data.error || 'Could not load that game.');
+    return data.pgn;
+  }
 
-    const prompt = `You are a chess coach. Here is engine-verified move classification data from a game (SAN moves with tags and centipawn-ish evals, White's perspective):\n\n${compact}\n\nTurning point move: ${tpLine}\n\n` +
-      (askText.trim()
-        ? `The user asks: ${askText.trim()}`
-        : 'Give a short (4-6 sentence) narrative explaining the Brilliant move(s) and the turning point, in a clear coaching tone.') +
-      '\n\nBe concrete and specific to these moves; do not invent moves not listed.';
-
+  async function importFromChessCom() {
+    if (!chessComUrl.trim()) return;
+    setImporting(true);
+    setImportError('');
     try {
-      const resp = await fetch('/api/explain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
-      });
-      const data = await resp.json();
-      setAskAnswer(data.text || data.error || 'No response.');
+      const pgnText = await loadChessComPgn(chessComUrl.trim());
+      setPgn(pgnText);
+      setStatus('Loaded from chess.com. Click "Analyze game" to begin.');
     } catch (err) {
-      setAskAnswer('Could not reach the explanation service: ' + err.message);
+      setImportError(err.message);
     }
-    setAsking(false);
+    setImporting(false);
+  }
+
+  // Reads the clipboard directly, so a chess.com link can go from "just copied
+  // on your phone/other tab" to a finished analysis in one click.
+  async function pasteAndAnalyzeFromChessCom() {
+    setImportError('');
+    let text;
+    try {
+      text = (await navigator.clipboard.readText()).trim();
+    } catch {
+      setImportError('Could not read the clipboard — your browser may require a permission click, or paste the link into the box manually.');
+      return;
+    }
+    if (!/chess\.com\/(?:[a-z]+\/)*game\/(?:live\/|daily\/)?\d+/i.test(text)) {
+      setImportError("That doesn't look like a chess.com game link — copy one and try again.");
+      return;
+    }
+    setChessComUrl(text);
+    setImporting(true);
+    try {
+      const pgnText = await loadChessComPgn(text);
+      setPgn(pgnText);
+      setImporting(false);
+      await runAnalysis(pgnText);
+    } catch (err) {
+      setImportError(err.message);
+      setImporting(false);
+    }
   }
 
   function downloadReport() {
     if (!analysisRef.current) return;
-    let md = '# Brilliancy Desk report\n\n| Move | Classification | Eval before | Eval after |\n|---|---|---|---|\n';
+    let md = '# f2p chess review report\n\n| Move | Classification | Eval before | Eval after |\n|---|---|---|---|\n';
     analysisRef.current.rows.forEach(r => {
       md += `| ${r.moveNo}${r.moverIsWhite ? '.' : '...'}${r.san} | ${TAG_LABEL[r.cls]} | ${r.evalBeforeDisplay} | ${r.evalAfterDisplay} |\n`;
     });
@@ -283,6 +545,14 @@ export default function App() {
   const evalHere = evalsRef.current[boardIndex];
   const bestUci = evalHere && evalHere.pv && evalHere.pv[0];
   const arrow = showArrow && bestUci ? parseUciMove(bestUci) : null;
+  const moveHere = boardIndex > 0 ? rows[boardIndex - 1] : null;
+  const badgeCls = moveHere && BADGE_CLASSES.includes(moveHere.cls) ? moveHere.cls : null;
+
+  const previewing = previewStep >= 0 && previewLine;
+  const displayFen = practice ? practice.fen : previewing ? previewLine.fens[previewStep] : positions[boardIndex];
+  const displayLastMove = practice ? undefined : previewing
+    ? (previewStep > 0 ? previewLine.moves[previewStep - 1] : undefined)
+    : movesRef.current[boardIndex - 1];
 
   return (
     <div className="wrap">
@@ -291,8 +561,8 @@ export default function App() {
           {Array.from({ length: 16 }).map((_, i) => <div key={i} />)}
         </div>
         <div>
-          <h1>Brilliancy Desk</h1>
-          <p>Paste a PGN. A real chess engine runs in your browser to find every sound sacrifice, the turning point, and the mistakes — then Claude explains what it found.</p>
+          <h1>f2p chess review</h1>
+          <p>Paste a PGN or a chess.com game link. A real chess engine runs in your browser to find every sound sacrifice, the turning point, the mistakes, and any forced mate.</p>
         </div>
       </header>
 
@@ -303,22 +573,52 @@ export default function App() {
               <div className="board-row">
                 <EvalBar cp={currentEval.cp} mate={currentEval.mate} flipped={flipped} />
                 <Chessboard
-                  fen={positions[boardIndex]}
-                  lastMove={movesRef.current[boardIndex - 1]}
+                  fen={displayFen}
+                  lastMove={displayLastMove}
                   flipped={flipped}
-                  arrow={arrow}
-                  animatingMove={animatingMove}
+                  arrow={previewing || practice ? null : arrow}
+                  animatingMove={practice ? practice.animatingMove : animatingMove}
+                  badgeCls={previewing || practice ? null : badgeCls}
+                  revealedSquares={revealedSquaresRef.current}
+                  interactive={!!practice && !practice.solved && !practice.checking}
+                  onUserMove={handlePracticeMove}
+                  legalMovesFrom={practice ? (sq) => practice.chess.moves({ square: sq, verbose: true }).map(m => m.to) : undefined}
+                  hintSquare={practice?.hint?.from || null}
+                  wrongSquare={practice?.wrongMove?.to || null}
                 />
               </div>
               <div className="board-nav">
                 <button className="small ghost" onClick={() => goToIndex(boardIndex - 1)} disabled={boardIndex === 0}>← Prev</button>
                 <span className="mono small">{boardIndex} / {positions.length - 1}</span>
+                {evalHere && evalHere.mate ? (
+                  <span className="mate-flag" title={`Forced mate in ${Math.abs(evalHere.mate)}`}>#{Math.abs(evalHere.mate)}</span>
+                ) : null}
                 <button className="small ghost" onClick={() => goToIndex(boardIndex + 1)} disabled={boardIndex === positions.length - 1}>Next →</button>
                 <button className={'small' + (showArrow ? '' : ' ghost')} onClick={() => setShowArrow(a => !a)}>
                   {showArrow ? 'Hide best move' : '➜ Show best move'}
                 </button>
                 <button className="small ghost" onClick={() => setFlipped(f => !f)}>⇅ Flip board</button>
               </div>
+
+              {practice && (
+                <div className="practice-panel">
+                  <h3>{practice.solved ? '🎉 Solved!' : 'Practice'} — mate in {practice.mateIn} for {practice.matingSideIsWhite ? 'White' : 'Black'}</h3>
+                  {!practice.solved && !practice.checking && (
+                    <div className="mono" style={{ fontSize: 13, color: 'var(--ink-soft)' }}>
+                      Drag the winning move onto the board ({practice.matingSideIsWhite ? "White's" : "Black's"} turn) — any move that keeps the mate on schedule counts.
+                    </div>
+                  )}
+                  {practice.checking && <div className="mono" style={{ fontSize: 13, color: 'var(--ink-soft)' }}>Checking…</div>}
+                  {practice.feedback === 'incorrect' && !practice.checking && <div className="practice-feedback bad">✗ Not quite — try again.</div>}
+                  {practice.feedback === 'correct' && !practice.solved && !practice.checking && <div className="practice-feedback good">✓ Correct!</div>}
+                  {practice.hint && !practice.solved && !practice.checking && (
+                    <div className="practice-feedback hint">Hint: move the piece on {practice.hint.from}.</div>
+                  )}
+                  <div className="row">
+                    <button className="small ghost" onClick={stopPractice}>✕ Exit practice</button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="board-empty">
@@ -329,29 +629,21 @@ export default function App() {
             </div>
           )}
 
-          {turningPoint && (
-            <div className="turning-point">
-              <h3>Turning point — {turningPoint.moveNo}{turningPoint.moverIsWhite ? '.' : '...'}{turningPoint.san}</h3>
-              <div className="mono" style={{ fontSize: 13, color: 'var(--ink-soft)' }}>
-                {turningPoint.moverIsWhite ? 'White' : 'Black'} · eval swung from {turningPoint.evalBeforeDisplay} to {turningPoint.evalAfterDisplay} · classified as {TAG_LABEL[turningPoint.cls]}
+          {previewing && (
+            <div className="mate-panel">
+              <div className="row" style={{ marginTop: 0 }}>
+                <button className="small ghost" onClick={stopMatePreview}>■ Stop preview</button>
+                <span className="mono small" style={{ color: 'var(--ink-soft)' }}>
+                  {previewStep} / {previewLine.moves.length}
+                </span>
               </div>
+              <div className="note">Previewing the engine's mating line, not necessarily the moves actually played from here.</div>
             </div>
           )}
 
           {rows.length > 0 && (
-            <div className="panel ask-box">
-              <h2>Ask about this game</h2>
-              <textarea
-                placeholder="e.g. Why does this move actually work? What should have been played instead?"
-                value={askText}
-                onChange={e => setAskText(e.target.value)}
-                style={{ minHeight: 60 }}
-              />
-              <div className="row">
-                <button className="small" onClick={askClaude} disabled={asking}>Ask Claude</button>
-                <button className="small ghost" onClick={downloadReport}>Download report (.md)</button>
-              </div>
-              {askAnswer && <div className="answer">{askAnswer}</div>}
+            <div className="row" style={{ marginTop: 0 }}>
+              <button className="small ghost" onClick={downloadReport}>Download report (.md)</button>
             </div>
           )}
         </div>
@@ -359,6 +651,23 @@ export default function App() {
         <div className="side-panel">
           <div className="panel">
             <h2>Game</h2>
+            <div className="row chess-com-import">
+              <input
+                type="text"
+                className="mono"
+                placeholder="Paste a chess.com game link…"
+                value={chessComUrl}
+                onChange={e => setChessComUrl(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') importFromChessCom(); }}
+              />
+              <button className="small ghost" onClick={importFromChessCom} disabled={importing || !chessComUrl.trim()}>
+                {importing ? 'Loading…' : 'Load'}
+              </button>
+              <button className="small" onClick={pasteAndAnalyzeFromChessCom} disabled={importing || busy}>
+                📋 Paste &amp; analyze
+              </button>
+            </div>
+            {importError && <div className="status mono" style={{ color: 'var(--blunder)' }}>{importError}</div>}
             <textarea value={pgn} onChange={e => setPgn(e.target.value)} />
             <div className="row">
               <label className="small">Depth
@@ -370,7 +679,7 @@ export default function App() {
               </label>
             </div>
             <div className="row">
-              <button onClick={runAnalysis} disabled={busy}>Analyze game</button>
+              <button onClick={() => runAnalysis()} disabled={busy}>Analyze game</button>
               <button className="ghost" onClick={() => { stopRef.current = true; }} disabled={!busy}>Stop</button>
             </div>
             <div className="status mono">{status}</div>
@@ -387,14 +696,14 @@ export default function App() {
                 {movePairs(rows).map(p => (
                   <div className="move-pair" key={p.moveNo}>
                     <div className="move-num mono">{p.moveNo}</div>
-                    <MoveCell row={p.white} active={boardIndex === (p.white?.idx ?? -2) + 1} onSelect={goToIndex} />
-                    <MoveCell row={p.black} active={boardIndex === (p.black?.idx ?? -2) + 1} onSelect={goToIndex} />
+                    <MoveCell row={p.white} active={boardIndex === (p.white?.idx ?? -2) + 1} onSelect={goToIndex} onPlayMate={playMateFromRow} onPracticeMate={practiceMate} busyWithMate={!!previewing || !!practice} />
+                    <MoveCell row={p.black} active={boardIndex === (p.black?.idx ?? -2) + 1} onSelect={goToIndex} onPlayMate={playMateFromRow} onPracticeMate={practiceMate} busyWithMate={!!previewing || !!practice} />
                   </div>
                 ))}
               </div>
               {counts && (
                 <div className="review-summary">
-                  {['brilliant', 'best', 'good', 'inaccuracy', 'mistake', 'blunder']
+                  {['brilliant', 'best', 'good', 'miss', 'inaccuracy', 'mistake', 'blunder']
                     .filter(k => counts[k] > 0)
                     .map(k => (
                       <span className="review-chip" key={k}>

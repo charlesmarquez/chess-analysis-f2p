@@ -11,6 +11,12 @@
   --mistake-bg: rgba(154,75,52,0.12);
   --blunder: #7A2E2E;
   --blunder-bg: rgba(122,46,46,0.14);
+  --best: #4B6B3A;
+  --best-bg: rgba(75,107,58,0.14);
+  --miss: #A8631D;
+  --miss-bg: rgba(168,99,29,0.14);
+  --mate-flag: #5B3A8C;
+  --mate-flag-bg: rgba(91,58,140,0.14);
   --line: rgba(42,38,32,0.16);
   --shadow: 0 1px 2px rgba(42,38,32,0.08);
   --radius: 3px;
@@ -30,6 +36,12 @@
     --mistake-bg: rgba(224,145,111,0.12);
     --blunder: #E28B8B;
     --blunder-bg: rgba(226,139,139,0.14);
+    --best: #8FBF6F;
+    --best-bg: rgba(143,191,111,0.14);
+    --miss: #E0A85E;
+    --miss-bg: rgba(224,168,94,0.14);
+    --mate-flag: #B79CE0;
+    --mate-flag-bg: rgba(183,156,224,0.16);
     --line: rgba(234,228,211,0.16);
     --shadow: none;
   }
@@ -47,6 +59,12 @@
   --mistake-bg: rgba(224,145,111,0.12);
   --blunder: #E28B8B;
   --blunder-bg: rgba(226,139,139,0.14);
+  --best: #8FBF6F;
+  --best-bg: rgba(143,191,111,0.14);
+  --miss: #E0A85E;
+  --miss-bg: rgba(224,168,94,0.14);
+  --mate-flag: #B79CE0;
+  --mate-flag-bg: rgba(183,156,224,0.16);
   --line: rgba(234,228,211,0.16);
   --shadow: none;
 }
@@ -83,6 +101,10 @@ h1 { font-size: 27px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em
 .hero p { margin: 0; color: var(--ink-soft); font-size: 15px; max-width: 60ch; }
 
 .layout { display: grid; grid-template-columns: 1fr 360px; gap: 30px; align-items: start; }
+/* Between roughly 860-1100px a fixed 360px sidebar left too little room for the
+   board (it was shrinking well below its siblings' widths at 900px, ~434px vs
+   600px at 1024px) — narrowing the sidebar here gives the board back that space. */
+@media (max-width: 1100px) { .layout { grid-template-columns: 1fr 300px; gap: 20px; } }
 @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
 .side-panel { display: flex; flex-direction: column; }
 .board-column > * + * { margin-top: 22px; }
@@ -110,6 +132,10 @@ label.small { font-size: 12.5px; color: var(--ink-soft); }
 select {
   background: var(--paper); color: var(--ink); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 6px 8px; font-family: 'IBM Plex Mono', monospace; font-size: 12.5px;
+}
+input[type="text"] {
+  background: var(--paper); color: var(--ink); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 8px 10px; font-size: 12.5px; flex: 1; min-width: 0;
 }
 
 button {
@@ -139,9 +165,12 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
   --rp-inaccuracy: #E0B357;
   --rp-mistake: #E0916F;
   --rp-blunder: #E28B8B;
+  --rp-miss: #D98E3F;
+  --rp-mate-flag: #B79CE0;
   background: var(--rp-bg); color: var(--rp-ink);
   border-radius: var(--radius); border: 1px solid rgba(0,0,0,0.35);
   padding: 16px; box-shadow: var(--shadow);
+  container-type: inline-size;
 }
 .review-header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .review-header h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--rp-ink); }
@@ -185,6 +214,43 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 .tag-inaccuracy { color: var(--rp-inaccuracy); background: transparent; border: 1px solid var(--rp-inaccuracy); }
 .tag-mistake { color: var(--rp-mistake); background: rgba(224,145,111,0.16); }
 .tag-blunder { color: var(--rp-blunder); background: rgba(226,139,139,0.18); }
+.tag-miss { color: var(--rp-miss); background: rgba(217,142,63,0.16); }
+
+.mate-flag {
+  font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 700;
+  color: var(--rp-mate-flag, var(--mate-flag)); background: var(--mate-flag-bg);
+  border: 1px solid var(--rp-mate-flag, var(--mate-flag)); border-radius: 10px;
+  padding: 1px 6px; margin-left: 6px; display: inline-block; letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+.mate-play-btn {
+  font-size: 10px; font-weight: 700; font-family: inherit; line-height: 1;
+  color: var(--rp-mate-flag, var(--mate-flag)); background: transparent;
+  border: 1px solid var(--rp-mate-flag, var(--mate-flag)); border-radius: 50%;
+  width: 18px; height: 18px; padding: 0; margin-left: 5px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  vertical-align: middle; cursor: pointer;
+}
+.mate-play-btn:hover { background: var(--mate-flag-bg); }
+.mate-play-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* The two-column move list is only ~145px per cell at the sidebar's fixed width
+   (true at almost every viewport, not just narrow ones, since the sidebar itself
+   never grows past ~360px) — full-word tags plus a mate flag and two round
+   buttons don't fit and were truncating the SAN itself. Below that width, drop
+   to the same short glyphs already used for the on-board move badges. */
+@container (max-width: 400px) {
+  .move-tag { font-size: 0; padding: 2px 6px; min-width: 20px; text-align: center; }
+  .move-tag::before { font-size: 11px; font-family: 'IBM Plex Mono', monospace; }
+  .tag-brilliant::before { content: '!!'; }
+  .tag-best::before { content: '✓'; }
+  .tag-inaccuracy::before { content: '?!'; }
+  .tag-mistake::before { content: '?'; }
+  .tag-blunder::before { content: '??'; }
+  .tag-miss::before { content: '?!'; }
+  .mate-flag { padding: 1px 4px; margin-left: 4px; font-size: 9px; }
+  .mate-play-btn { width: 15px; height: 15px; font-size: 9px; margin-left: 3px; }
+}
 
 .review-summary {
   display: flex; flex-wrap: wrap; gap: 8px 16px;
@@ -199,6 +265,7 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 .dot-inaccuracy { background: var(--rp-inaccuracy); }
 .dot-mistake { background: var(--rp-mistake); }
 .dot-blunder { background: var(--rp-blunder); }
+.dot-miss { background: var(--rp-miss); }
 
 .board-panel { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .board-empty {
@@ -218,6 +285,11 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
   width: auto; max-width: 600px; aspect-ratio: 1;
   border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
   box-shadow: var(--shadow);
+  /* Lets coordinate labels and move badges scale off the board's own rendered
+     size (cqw) instead of a fixed px — a shrunk board (small viewport, or the
+     squeezed mid-width sidebar layout) would otherwise leave those fixed-size
+     elements looking oversized and crowding the squares underneath them. */
+  container-type: inline-size;
 }
 .board-arrows { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
 .eval-bar {
@@ -237,6 +309,23 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 .board-square.highlight::after {
   content: ''; position: absolute; inset: 0; background: rgba(214, 189, 30, 0.45);
 }
+.board-square.hint::after {
+  content: ''; position: absolute; inset: 0; background: var(--mate-flag-bg);
+  box-shadow: inset 0 0 0 3px var(--mate-flag);
+  animation: hint-pulse 1s ease-in-out infinite;
+}
+@keyframes hint-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.board-square.drag-hover::after {
+  content: ''; position: absolute; inset: 0; box-shadow: inset 0 0 0 3px rgba(255,255,255,0.65);
+}
+.legal-dot {
+  position: absolute; width: 30%; height: 30%; border-radius: 50%;
+  background: rgba(20, 18, 14, 0.28); pointer-events: none;
+}
+.legal-dot.capture {
+  width: 88%; height: 88%; background: transparent;
+  border: 4px solid rgba(20, 18, 14, 0.28); box-sizing: border-box;
+}
 .piece-layer { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
 .piece-cell {
   position: absolute; top: 0; left: 0; width: 12.5%; height: 12.5%;
@@ -247,9 +336,15 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
   width: 78%; height: 78%;
   filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));
 }
+.piece.draggable { pointer-events: auto; cursor: grab; touch-action: none; }
+.chessboard.dragging .piece.draggable { cursor: grabbing; }
+.dragging-piece { z-index: 4; transition: none; }
+.dragging-piece .piece { width: 86%; height: 86%; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4)); }
 .coord {
-  position: absolute; font-size: 12px; font-weight: 700;
+  position: absolute; font-size: clamp(8px, 3cqw, 12px); font-weight: 700;
   font-family: 'IBM Plex Mono', monospace; z-index: 1;
+  user-select: none; -webkit-user-select: none; -moz-user-select: none;
+  pointer-events: none;
 }
 .board-square.light .coord { color: var(--board-dark); }
 .board-square.dark .coord { color: var(--board-light); }
@@ -257,14 +352,35 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 .file-coord { bottom: 1px; right: 4px; }
 .board-nav { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
 
-.turning-point {
-  border: 1px solid var(--brilliant); background: var(--brilliant-bg);
+.move-badge {
+  position: absolute; top: -8%; right: -8%; z-index: 3;
+  width: 30%; aspect-ratio: 1; min-width: 14px; max-width: 24px; padding: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'IBM Plex Mono', monospace; font-size: clamp(8px, 3.4cqw, 11px); font-weight: 700;
+  color: var(--paper-raised); box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+  user-select: none; pointer-events: none;
+}
+.badge-brilliant { background: var(--brilliant); }
+.badge-best { background: var(--best); }
+.badge-mistake { background: var(--mistake); }
+.badge-blunder { background: var(--blunder); }
+.badge-miss { background: var(--miss); }
+.badge-wrong-attempt { background: var(--blunder); animation: wrong-pop 220ms ease; }
+@keyframes wrong-pop { 0% { transform: scale(0.4); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); } }
+
+.mate-panel {
+  border: 1px solid var(--blunder); background: var(--blunder-bg);
   border-radius: var(--radius); padding: 16px 18px;
 }
-.turning-point h3 { margin: 0 0 6px; font-size: 15px; }
+.note { font-size: 12px; color: var(--ink-soft); margin-top: 8px; }
 
-.answer {
-  margin-top: 12px; padding: 12px 14px; background: var(--paper);
-  border: 1px solid var(--line); border-radius: var(--radius);
-  font-size: 14.5px; white-space: pre-wrap;
+.practice-btn { border-color: var(--mate-flag, #5B3A8C); }
+.practice-panel {
+  width: 100%; max-width: 636px; border: 1px solid var(--mate-flag);
+  background: var(--mate-flag-bg); border-radius: var(--radius); padding: 14px 16px;
 }
+.practice-panel h3 { margin: 0 0 4px; font-size: 15px; }
+.practice-feedback { margin-top: 8px; font-size: 13.5px; font-weight: 600; }
+.practice-feedback.good { color: var(--best); }
+.practice-feedback.bad { color: var(--blunder); }
+.practice-feedback.hint { color: var(--mate-flag); }
