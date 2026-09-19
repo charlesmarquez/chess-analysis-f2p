@@ -70,7 +70,7 @@ function pointToSquare(fracX, fracY, flipped) {
 // marked with a green check badge (cleared on the next attempt).
 export default function Chessboard({ fen, lastMove, flipped = false, arrow, animatingMove, badgeCls, revealedSquares, interactive, onUserMove, legalMovesFrom, hintSquare, wrongSquare, correctSquare }) {
   const boardRef = useRef(null);
-  const [drag, setDrag] = useState(null); // { square, x, y, hoverSquare } in board-local px, or null
+  const [drag, setDrag] = useState(null); // { square, x, y } in board-local px, or null
 
   const pieces = useMemo(() => occupiedSquares(fen), [fen]);
   const pieceAt = useMemo(() => Object.fromEntries(pieces.map(p => [p.square, p.piece])), [pieces]);
@@ -88,7 +88,7 @@ export default function Chessboard({ fen, lastMove, flipped = false, arrow, anim
     if (!interactive) return;
     e.preventDefault();
     const p = pointFromEvent(e);
-    setDrag({ square, x: p.x, y: p.y, hoverSquare: square });
+    setDrag({ square, x: p.x, y: p.y });
   }
 
   useEffect(() => {
@@ -96,7 +96,7 @@ export default function Chessboard({ fen, lastMove, flipped = false, arrow, anim
     document.body.style.cursor = 'grabbing';
     function onMove(e) {
       const p = pointFromEvent(e);
-      setDrag(d => d && { ...d, x: p.x, y: p.y, hoverSquare: pointToSquare(p.x / p.w, p.y / p.h, flipped) });
+      setDrag(d => d && { ...d, x: p.x, y: p.y });
     }
     function onUp(e) {
       const p = pointFromEvent(e);
@@ -132,14 +132,13 @@ export default function Chessboard({ fen, lastMove, flipped = false, arrow, anim
             const isHighlighted = lastMove && (square === lastMove.from || square === lastMove.to);
             const isHint = hintSquare === square;
             const isLegalTarget = !!drag && legalTargets.includes(square);
-            const isDragHover = !!drag && drag.hoverSquare === square && square !== drag.square;
             return (
               <div
                 key={square}
                 data-square={square}
                 className={
                   'board-square' + (isLight ? ' light' : ' dark') + (isHighlighted ? ' highlight' : '')
-                  + (isHint ? ' hint' : '') + (isDragHover ? ' drag-hover' : '')
+                  + (isHint ? ' hint' : '')
                 }
               >
                 {displayF === 0 && <span className="coord rank-coord">{8 - rIdx}</span>}
