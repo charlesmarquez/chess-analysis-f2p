@@ -84,7 +84,10 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--ink-soft); border-radius: 8px; }
 .mono { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; }
 
-.wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 80px; }
+/* Grows past 1180px on wide viewports instead of hard-capping there, so the
+   side panels (below) actually have extra room to grow into rather than the
+   whole layout just gaining more empty margin on a big monitor. */
+.wrap { max-width: clamp(1180px, 78vw, 1600px); margin: 0 auto; padding: 28px 20px 80px; }
 
 header.hero {
   display: flex; align-items: center; gap: 22px;
@@ -100,7 +103,11 @@ header.hero {
 h1 { font-size: 27px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
 .hero p { margin: 0; color: var(--ink-soft); font-size: 15px; max-width: 60ch; }
 
-.layout { display: grid; grid-template-columns: 1fr 360px; gap: 30px; align-items: start; }
+/* The sidebar's own width also grows on wide viewports (clamped 360-480px) —
+   the board maxes out around 636px regardless (see .board-row/.chessboard),
+   so any width beyond that was previously wasted as outer margin instead of
+   giving the Game/Analysis panels more room to breathe. */
+.layout { display: grid; grid-template-columns: 1fr clamp(360px, 26vw, 480px); gap: 30px; align-items: start; }
 /* Between roughly 860-1100px a fixed 360px sidebar left too little room for the
    board (it was shrinking well below its siblings' widths at 900px, ~434px vs
    600px at 1024px) — narrowing the sidebar here gives the board back that space. */
