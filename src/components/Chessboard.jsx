@@ -66,7 +66,9 @@ function pointToSquare(fracX, fracY, flipped) {
 // hintSquare: a square to highlight as "move this piece" (practice mode, after
 // repeated wrong attempts). wrongSquare: the destination of the most recent wrong
 // practice attempt, marked with a red X badge (cleared on the next attempt).
-export default function Chessboard({ fen, lastMove, flipped = false, arrow, animatingMove, badgeCls, revealedSquares, interactive, onUserMove, legalMovesFrom, hintSquare, wrongSquare }) {
+// correctSquare: the destination of the most recent correct practice attempt,
+// marked with a green check badge (cleared on the next attempt).
+export default function Chessboard({ fen, lastMove, flipped = false, arrow, animatingMove, badgeCls, revealedSquares, interactive, onUserMove, legalMovesFrom, hintSquare, wrongSquare, correctSquare }) {
   const boardRef = useRef(null);
   const [drag, setDrag] = useState(null); // { square, x, y, hoverSquare } in board-local px, or null
 
@@ -147,6 +149,9 @@ export default function Chessboard({ fen, lastMove, flipped = false, arrow, anim
                 )}
                 {wrongSquare === square && (
                   <span className="move-badge badge-wrong-attempt">✗</span>
+                )}
+                {correctSquare === square && (
+                  <span className="move-badge badge-correct-attempt">✓</span>
                 )}
                 {isLegalTarget && (
                   <span className={'legal-dot' + (pieceAt[square] ? ' capture' : '')} />

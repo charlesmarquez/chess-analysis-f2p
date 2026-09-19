@@ -373,6 +373,7 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 .badge-blunder { background: var(--blunder); }
 .badge-miss { background: var(--miss); }
 .badge-wrong-attempt { background: var(--blunder); animation: wrong-pop 220ms ease; }
+.badge-correct-attempt { background: var(--best); animation: wrong-pop 220ms ease; }
 @keyframes wrong-pop { 0% { transform: scale(0.4); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); } }
 
 .mate-panel {

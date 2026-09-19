@@ -261,7 +261,7 @@ export default function App() {
     setPractice({
       mateIn, matingSideIsWhite,
       chess, fen: chess.fen(), remaining: mateIn, nextHintMove: moves[idx] || null,
-      solvedCount: 0, wrongAttempts: 0, hint: null, feedback: null, wrongMove: null,
+      solvedCount: 0, wrongAttempts: 0, hint: null, feedback: null, wrongMove: null, correctMove: null,
       solved: idx >= moves.length, checking: false, animatingMove: null
     });
   }
@@ -282,7 +282,7 @@ export default function App() {
     setPractice(p => {
       const wrongAttempts = p.wrongAttempts + 1;
       return {
-        ...p, wrongAttempts, feedback: 'incorrect', checking: false, wrongMove: { from, to },
+        ...p, wrongAttempts, feedback: 'incorrect', checking: false, wrongMove: { from, to }, correctMove: null,
         hint: wrongAttempts >= 2 && p.nextHintMove ? { from: p.nextHintMove.from } : p.hint
       };
     });
@@ -302,7 +302,7 @@ export default function App() {
     // square, so without this the board briefly reverted to the pre-move position
     // and then snapped straight to wherever the (possibly two-move) result ended
     // up once the engine check resolved.
-    setPractice(p => ({ ...p, chess: attempt, fen: attempt.fen(), checking: true, wrongMove: null, animatingMove: moveAnim }));
+    setPractice(p => ({ ...p, chess: attempt, fen: attempt.fen(), checking: true, wrongMove: null, correctMove: null, animatingMove: moveAnim }));
 
     // This was meant to be the mating move itself — no position left to hand the
     // engine (a checkmated position has no legal moves for it to search), so verify
@@ -311,7 +311,7 @@ export default function App() {
       if (attempt.in_checkmate()) {
         setPractice(p => ({
           ...p, remaining: 0, solvedCount: p.solvedCount + 1, wrongAttempts: 0, hint: null,
-          wrongMove: null, feedback: 'correct', nextHintMove: null, solved: true, checking: false
+          wrongMove: null, correctMove: { from, to }, feedback: 'correct', nextHintMove: null, solved: true, checking: false
         }));
       } else {
         setPractice(p => ({ ...p, chess: new Chess(beforeFen), fen: beforeFen, checking: false, animatingMove: null }));
@@ -341,7 +341,7 @@ export default function App() {
     if (!replyMove) {
       setPractice(p => ({
         ...p, remaining: remainingAfter, solvedCount: p.solvedCount + 1, wrongAttempts: 0,
-        hint: null, feedback: 'correct', checking: false, nextHintMove: null
+        hint: null, feedback: 'correct', correctMove: { from, to }, checking: false, nextHintMove: null
       }));
       return;
     }
@@ -355,7 +355,7 @@ export default function App() {
         return {
           ...p, chess: after, fen: after.fen(), remaining: remainingAfter,
           solvedCount: p.solvedCount + 1, wrongAttempts: 0, hint: null, wrongMove: null,
-          feedback: 'correct', nextHintMove: continuation[1] || null,
+          feedback: 'correct', correctMove: { from, to }, nextHintMove: continuation[1] || null,
           checking: false, solved: false, animatingMove: forwardAnim(replyMove)
         };
       });
@@ -570,6 +570,7 @@ export default function App() {
                   legalMovesFrom={practice ? (sq) => practice.chess.moves({ square: sq, verbose: true }).map(m => m.to) : undefined}
                   hintSquare={practice?.hint?.from || null}
                   wrongSquare={practice?.wrongMove?.to || null}
+                  correctSquare={practice?.correctMove?.to || null}
                 />
               </div>
               <div className="board-nav">
