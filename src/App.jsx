@@ -95,7 +95,6 @@ export default function App() {
 
   const engineRef = useRef(null);
   const stopRef = useRef(false);
-  const analysisRef = useRef(null);
   const movesRef = useRef([]);
   const evalsRef = useRef([]);
   const boardIndexRef = useRef(0);
@@ -474,7 +473,6 @@ export default function App() {
       outRows.push(row);
     }
 
-    analysisRef.current = { rows: outRows, counts: outCounts };
     setRows(outRows);
     setCounts(outCounts);
     setBusy(false);
@@ -527,19 +525,6 @@ export default function App() {
       setImportError(err.message);
       setImporting(false);
     }
-  }
-
-  function downloadReport() {
-    if (!analysisRef.current) return;
-    let md = '# f2p chess review report\n\n| Move | Classification | Eval before | Eval after |\n|---|---|---|---|\n';
-    analysisRef.current.rows.forEach(r => {
-      md += `| ${r.moveNo}${r.moverIsWhite ? '.' : '...'}${r.san} | ${TAG_LABEL[r.cls]} | ${r.evalBeforeDisplay} | ${r.evalAfterDisplay} |\n`;
-    });
-    const blob = new Blob([md], { type: 'text/markdown' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'brilliancy-report.md';
-    a.click();
   }
 
   const evalHere = evalsRef.current[boardIndex];
@@ -638,12 +623,6 @@ export default function App() {
                 </span>
               </div>
               <div className="note">Previewing the engine's mating line, not necessarily the moves actually played from here.</div>
-            </div>
-          )}
-
-          {rows.length > 0 && (
-            <div className="row" style={{ marginTop: 0 }}>
-              <button className="small ghost" onClick={downloadReport}>Download report (.md)</button>
             </div>
           )}
         </div>
