@@ -98,6 +98,7 @@ export default function App() {
   const movesRef = useRef([]);
   const evalsRef = useRef([]);
   const boardIndexRef = useRef(0);
+  const movelistRef = useRef(null);
   const previewTimerRef = useRef(null);
   // Squares whose piece was ever restored by an undone capture. Kept permanently (not
   // just for the duration of that one animation) — see the key-collision note in
@@ -109,6 +110,14 @@ export default function App() {
   useEffect(() => {
     const res = evalsRef.current[boardIndex];
     if (res) setCurrentEval(whiteEvalOf(res, boardIndex % 2 === 0));
+  }, [boardIndex]);
+
+  // Keeps the analysis move list scrolled to whichever move the board is
+  // currently showing, so stepping through with arrow keys/nav buttons doesn't
+  // require manually scrolling the (often much longer) move list to follow along.
+  useEffect(() => {
+    const active = movelistRef.current?.querySelector('.move-cell.active');
+    if (active) active.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [boardIndex]);
 
   // Auto-clears the sliding-piece animation once its CSS transition has finished.
@@ -672,7 +681,7 @@ export default function App() {
                 <h2>Analysis</h2>
                 <span className="review-engine mono">Stockfish 11 · depth {depth}</span>
               </div>
-              <div className="movelist">
+              <div className="movelist" ref={movelistRef}>
                 {movePairs(rows).map(p => (
                   <div className="move-pair" key={p.moveNo}>
                     <div className="move-num mono">{p.moveNo}</div>

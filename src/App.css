@@ -104,7 +104,7 @@ h1 { font-size: 27px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em
 .hero p { margin: 0; color: var(--ink-soft); font-size: 15px; max-width: 60ch; }
 
 /* The sidebar's own width also grows on wide viewports (clamped 360-480px) —
-   the board maxes out around 636px regardless (see .board-row/.chessboard),
+   the board maxes out around 800px regardless (see .board-row/.chessboard),
    so any width beyond that was previously wasted as outer margin instead of
    giving the Game/Analysis panels more room to breathe. */
 .layout { display: grid; grid-template-columns: 1fr clamp(360px, 26vw, 480px); gap: 30px; align-items: start; }
@@ -187,6 +187,7 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
   display: flex; flex-direction: column; max-height: 420px;
   overflow-y: auto; overflow-x: hidden; border-radius: var(--radius);
   scrollbar-color: var(--rp-ink-soft) transparent; scrollbar-width: thin;
+  scroll-behavior: smooth;
 }
 .movelist::-webkit-scrollbar { width: 8px; }
 .movelist::-webkit-scrollbar-track { background: transparent; }
@@ -286,10 +287,10 @@ button.small { font-size: 12.5px; padding: 6px 11px; }
 }
 .board-empty-icon div:nth-child(odd) { background: var(--board-light); }
 .board-empty-icon div:nth-child(even) { background: var(--board-dark); }
-.board-row { display: flex; gap: 10px; width: 100%; max-width: 636px; }
+.board-row { display: flex; gap: 10px; width: 100%; max-width: 800px; }
 .chessboard {
   display: flex; flex-direction: column; flex: 1 1 auto; position: relative;
-  width: auto; max-width: 600px; aspect-ratio: 1;
+  width: auto; max-width: 764px; aspect-ratio: 1;
   border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
   box-shadow: var(--shadow);
   /* Lets coordinate labels and move badges scale off the board's own rendered
