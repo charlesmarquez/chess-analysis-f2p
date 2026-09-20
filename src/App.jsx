@@ -445,9 +445,10 @@ export default function App() {
     }
     setProgress(100);
     setStatus('Analysis complete.');
-    boardIndexRef.current = positions.length - 1;
+    const landingIndex = Math.min(1, positions.length - 1);
+    boardIndexRef.current = landingIndex;
     setAnimatingMove(null);
-    setBoardIndex(positions.length - 1);
+    setBoardIndex(landingIndex);
 
     const outRows = [];
     const outCounts = { brilliant: 0, best: 0, good: 0, miss: 0, inaccuracy: 0, mistake: 0, blunder: 0 };
@@ -594,6 +595,7 @@ export default function App() {
                 />
               </div>
               <div className="board-nav">
+                <button className="small ghost" onClick={() => goToIndex(0)} disabled={boardIndex === 0} title="Return to start">⏮ Start</button>
                 <button className="small ghost" onClick={() => goToIndex(boardIndex - 1)} disabled={boardIndex === 0}>← Prev</button>
                 <span className="mono small">{boardIndex} / {positions.length - 1}</span>
                 {evalHere && evalHere.mate ? (
