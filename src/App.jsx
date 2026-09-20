@@ -115,9 +115,20 @@ export default function App() {
   // Keeps the analysis move list scrolled to whichever move the board is
   // currently showing, so stepping through with arrow keys/nav buttons doesn't
   // require manually scrolling the (often much longer) move list to follow along.
+  // Deliberately scrolls only the .movelist container itself (via scrollTop, which
+  // the container's own `scroll-behavior: smooth` animates) rather than
+  // Element.scrollIntoView — that also drags the outer page's scroll position to
+  // bring the element into the *window's* view, which on narrow layouts (where the
+  // side panel sits above/below the board rather than beside it) yanked the whole
+  // page around every time the board index changed.
   useEffect(() => {
-    const active = movelistRef.current?.querySelector('.move-cell.active');
-    if (active) active.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const container = movelistRef.current;
+    const active = container?.querySelector('.move-cell.active');
+    if (!container || !active) return;
+    const cRect = container.getBoundingClientRect();
+    const aRect = active.getBoundingClientRect();
+    if (aRect.top < cRect.top) container.scrollTop -= (cRect.top - aRect.top);
+    else if (aRect.bottom > cRect.bottom) container.scrollTop += (aRect.bottom - cRect.bottom);
   }, [boardIndex]);
 
   // Auto-clears the sliding-piece animation once its CSS transition has finished.
